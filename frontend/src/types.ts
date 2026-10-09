@@ -99,3 +99,58 @@ export interface UserPreferences {
   soundAlerts: boolean;
   saveHistoryLocally: boolean;
 }
+
+export interface AudioMetrics {
+  duration_seconds: number;
+  transcription_latency_ms: number;
+  engine: string;
+  segments_count: number;
+  detected_language: string;
+}
+
+export interface AudioSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface AudioAnalysisResponse {
+  audio_metrics: AudioMetrics;
+  transcript: string;
+  segments: AudioSegment[];
+  risk_assessment: RiskAssessment;
+}
+
+export interface LiveRiskUpdate {
+  type: 'risk_update';
+  session_id: string;
+  turn_number: number;
+  speaker: string;
+  text: string;
+  risk_level: RiskLevel;
+  risk_score: number;
+  decision: DecisionType;
+  reasons: string[];
+  is_final: boolean;
+  timestamp: number;
+}
+
+export interface LiveWarning {
+  type: 'warning';
+  severity: 'CRITICAL' | 'HIGH';
+  title: string;
+  message: string;
+  evidence_quotes: string[];
+  timestamp: number;
+}
+
+export interface LiveSessionSummary {
+  session_id: string;
+  duration_seconds: number;
+  turns_processed: number;
+  final_risk_level: RiskLevel;
+  final_risk_score: number;
+  decision: DecisionType;
+  audio_bytes_buffered: number;
+}
+

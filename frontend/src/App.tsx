@@ -10,6 +10,7 @@ import { EvidenceFindings } from './components/EvidenceFindings';
 import { ProtectionRecommendations } from './components/ProtectionRecommendations';
 import { RecentAnalysesDrawer } from './components/RecentAnalysesDrawer';
 import { SettingsView } from './components/SettingsView';
+import { LiveCallMonitor } from './components/LiveCallMonitor';
 
 import {
   fetchDemoScenarios,
@@ -257,6 +258,7 @@ export const App: React.FC = () => {
             <DashboardOverview
               recentAnalyses={recentAnalyses}
               onStartNewAnalysis={() => setCurrentTab('analyze')}
+              onStartLiveMonitor={() => setCurrentTab('live')}
               onExploreScenarios={() => {
                 const el = document.getElementById('demo-scenarios-section');
                 el?.scrollIntoView({ behavior: 'smooth' });
@@ -295,7 +297,24 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* PAGE 2: ANALYZE CONVERSATION */}
+        {/* PAGE 2: LIVE CALL DETECTION */}
+        {currentTab === 'live' && (
+          <div>
+            <LiveCallMonitor
+              onLoadFullAnalysis={(res) => {
+                setCurrentAnalysis(res);
+                setTranscript(res.raw_transcript || '');
+                setSelectedDemoId(res.demo_scenario_id || null);
+                setRecentAnalyses((prev) => [res, ...prev.filter((r) => r.id !== res.id)]);
+                saveToLocalHistoryIfEnabled(res);
+                setCurrentTab('results');
+              }}
+              soundAlertsEnabled={preferences.soundAlerts}
+            />
+          </div>
+        )}
+
+        {/* PAGE 3: ANALYZE CONVERSATION */}
         {currentTab === 'analyze' && (
           <div>
             <div style={{ marginBottom: '20px' }}>

@@ -1,6 +1,9 @@
 import os
+import json
+import time
+import base64
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 
 from engine.models import (
@@ -12,12 +15,15 @@ from engine.models import (
 )
 from engine.analyzer import engine, parse_raw_transcript
 from engine.scenarios import DEMO_SCENARIOS, SCENARIO_LOOKUP
+from engine.asr_service import asr_service
+from engine.stream_session import session_registry
+from engine.privacy import redact_sensitive_data
 
 # Initialize FastAPI application
 app = FastAPI(
     title="ElderShield Scam Detection API",
-    description="Conversational scam detection engine protecting elderly users against social engineering fraud.",
-    version="2.0.0"
+    description="Conversational scam detection engine protecting elderly users against social engineering fraud with real-time live audio analysis.",
+    version="2.1.0"
 )
 
 # CORS configuration via environment variables
@@ -55,13 +61,16 @@ def health_status():
         "status": "healthy",
         "service": "ElderShield Scam Detection Core",
         "analysis_method": engine.ANALYSIS_METHOD,
-        "engine_version": "2.0.0",
+        "engine_version": "2.1.0",
+        "asr_engine": "faster-whisper-tiny" if asr_service.is_engine_ready else "faster-whisper-ready",
         "supported_languages": ["English", "Hindi (हिन्दी)", "Telugu (తెలుగు)", "Hinglish", "Teluglish"],
         "endpoints": [
             "GET /health",
             "POST /api/analyze",
             "POST /api/analyze/progression",
-            "GET /api/demo-scenarios"
+            "POST /api/analyze/audio",
+            "GET /api/demo-scenarios",
+            "WS /ws/live-call"
         ]
     }
 
@@ -131,10 +140,152 @@ def analyze_conversation_progression(request: AnalyzeRequest):
         analysis_method=assessment.analysis_method
     )
 
+@app.post("/api/analyze/audio")
+async def analyze_audio_upload(
+    file: UploadFile = File(...),
+    language_hint: Optional[str] = Form("auto")
+):
+    """
+    Accepts explicitly uploaded audio recording, performs automated speech recognition,
+    and runs progressive scam detection on the resulting transcript.
+    """
+    audio_bytes = await file.read()
+    if not audio_bytes or len(audio_bytes) < 100:
+        raise HTTPException(status_code=400, detail="Invalid audio file or empty upload.")
+
+    # 1. Transcribe audio with ASR service
+    transcription = asr_service.transcribe_audio_bytes(
+        audio_bytes=audio_bytes,
+        filename=file.filename or "call_audio.wav",
+        language_hint=language_hint
+    )
+
+    transcript_text = transcription.get("transcript", "").strip()
+    if not transcript_text:
+        transcript_text = "Caller: Audio uploaded with inaudible speech or background noise."
+
+    # 2. Run detection engine on transcribed dialogue
+    turns = parse_raw_transcript(transcript_text)
+    assessment = engine.analyze(turns=turns, raw_transcript=transcript_text)
+
+    RECENT_ANALYSES.insert(0, assessment)
+    if len(RECENT_ANALYSES) > 50:
+        RECENT_ANALYSES.pop()
+
+    return {
+        "audio_metrics": {
+            "duration_seconds": transcription.get("duration_seconds", 0.0),
+            "transcription_latency_ms": transcription.get("latency_ms", 0.0),
+            "engine": transcription.get("engine_used", "faster-whisper"),
+            "segments_count": len(transcription.get("segments", [])),
+            "detected_language": transcription.get("language", "en")
+        },
+        "transcript": transcript_text,
+        "segments": transcription.get("segments", []),
+        "risk_assessment": assessment
+    }
+
 @app.get("/api/recent", response_model=List[RiskAssessment])
 def get_recent_analyses(limit: int = 15):
     """Retrieve recent conversation analyses for the current session."""
     return RECENT_ANALYSES[:limit]
+
+# Real-Time Live Call WebSocket Pipeline
+@app.websocket("/ws/live-call")
+async def live_call_websocket(websocket: WebSocket):
+    """
+    Full-duplex WebSocket stream for real-time live scam detection.
+    Receives live audio chunks and speech segments, extracts behavioral cues,
+    and pushes instant warnings before the caller can execute fraudulent extraction.
+    """
+    await websocket.accept()
+    session = session_registry.create_session(websocket)
+
+    # Initial ready handshake
+    await websocket.send_json({
+        "type": "session_ready",
+        "session_id": session.session_id,
+        "status": "connected",
+        "asr_ready": True,
+        "timestamp": time.time()
+    })
+
+    try:
+        while True:
+            raw_msg = await websocket.receive_text()
+            data = json.loads(raw_msg)
+            msg_type = data.get("type")
+
+            if msg_type == "audio_chunk":
+                # Handle streaming audio chunk
+                seq = data.get("sequence_id", 0)
+                chunk_b64 = data.get("chunk", "")
+                if chunk_b64:
+                    try:
+                        chunk_bytes = base64.b64decode(chunk_b64)
+                        session.add_audio_chunk(chunk_bytes, seq)
+                    except Exception:
+                        pass
+
+                await websocket.send_json({
+                    "type": "chunk_ack",
+                    "sequence_id": seq,
+                    "buffered_bytes": len(session.audio_buffer)
+                })
+
+            elif msg_type == "transcript_segment":
+                # Real-time incremental speech segment received
+                speaker = data.get("speaker", "Caller")
+                text = data.get("text", "")
+                is_final = data.get("is_final", True)
+                latency_ms = data.get("latency_ms", 0)
+
+                assessment = session.add_transcript_segment(speaker=speaker, text=text)
+
+                if assessment:
+                    # Send live progressive risk update
+                    await websocket.send_json({
+                        "type": "risk_update",
+                        "session_id": session.session_id,
+                        "turn_number": len(session.turns),
+                        "speaker": speaker,
+                        "text": text,
+                        "risk_level": assessment.risk_level,
+                        "risk_score": assessment.risk_score,
+                        "decision": assessment.decision,
+                        "reasons": assessment.reasons,
+                        "is_final": is_final,
+                        "timestamp": time.time()
+                    })
+
+                    # If HIGH RISK detected, deliver immediate prominent warning
+                    if assessment.risk_level == "HIGH_RISK":
+                        await websocket.send_json({
+                            "type": "warning",
+                            "severity": "CRITICAL",
+                            "title": "URGENT FRAUD ALERT",
+                            "message": assessment.recommended_action,
+                            "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
+                            "timestamp": time.time()
+                        })
+
+            elif msg_type == "stop":
+                summary = session.get_summary_stats()
+                await websocket.send_json({
+                    "type": "session_summary",
+                    "summary": summary
+                })
+                break
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+    finally:
+        session_registry.remove_session(session.session_id)
 
 if __name__ == "__main__":
     import uvicorn

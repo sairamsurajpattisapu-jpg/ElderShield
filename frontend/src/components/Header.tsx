@@ -8,9 +8,10 @@ import {
   TrendingUp,
   History,
   Sliders,
+  Radio,
 } from 'lucide-react';
 
-export type NavTab = 'dashboard' | 'analyze' | 'results' | 'timeline' | 'recent' | 'settings';
+export type NavTab = 'dashboard' | 'live' | 'analyze' | 'results' | 'timeline' | 'recent' | 'settings';
 
 interface HeaderProps {
   currentTab: NavTab;
@@ -25,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const navItems = [
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+    { id: 'live' as NavTab, label: 'Live Call Detection', icon: <Radio size={16} /> },
     { id: 'analyze' as NavTab, label: 'Analyze Conversation', icon: <MessageSquare size={16} /> },
     { id: 'results' as NavTab, label: 'Risk Results', icon: <FileCheck2 size={16} />, disabled: !hasActiveResult },
     { id: 'timeline' as NavTab, label: 'Conversation Timeline', icon: <TrendingUp size={16} />, disabled: !hasActiveResult },

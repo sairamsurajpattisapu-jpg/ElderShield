@@ -6,12 +6,14 @@ interface DashboardOverviewProps {
   recentAnalyses: RiskAssessment[];
   onStartNewAnalysis: () => void;
   onExploreScenarios: () => void;
+  onStartLiveMonitor?: () => void;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   recentAnalyses,
   onStartNewAnalysis,
   onExploreScenarios,
+  onStartLiveMonitor,
 }) => {
   const totalScans = recentAnalyses.length;
   const highRiskCount = recentAnalyses.filter(a => a.risk_level === 'HIGH_RISK').length;
@@ -85,6 +87,34 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {onStartLiveMonitor && (
+            <button
+              onClick={onStartLiveMonitor}
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                color: '#fca5a5',
+                border: '1.5px solid var(--risk-high-border)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 18px',
+                fontWeight: 700,
+                fontSize: '0.92rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+              }}
+            >
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--risk-high)',
+                boxShadow: '0 0 6px var(--risk-high)',
+              }} />
+              <span>Live Call Monitor</span>
+            </button>
+          )}
+
           <button
             onClick={onExploreScenarios}
             style={{
@@ -120,7 +150,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               boxShadow: '0 4px 14px rgba(6, 182, 212, 0.3)',
             }}
           >
-            <span>Start Analysis</span>
+            <span>Analyze Transcript</span>
             <ArrowRight size={18} />
           </button>
         </div>

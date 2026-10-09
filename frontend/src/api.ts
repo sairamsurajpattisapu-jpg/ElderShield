@@ -1,4 +1,4 @@
-import type { RiskAssessment, ProgressionResponse, DemoScenario } from './types';
+import type { RiskAssessment, ProgressionResponse, DemoScenario, AudioAnalysisResponse } from './types';
 
 // Support VITE_API_BASE_URL environment variable, falling back to empty string for relative proxy
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -51,6 +51,40 @@ export async function analyzeProgression(
     throw new Error(err.detail || 'ElderShield progression service returned an error');
   }
   return res.json();
+}
+
+export async function analyzeAudioFile(
+  file: File | Blob,
+  languageHint = 'auto'
+): Promise<AudioAnalysisResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('language_hint', languageHint);
+
+  const res = await fetch(`${API_BASE}/api/analyze/audio`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Audio speech recognition failed' }));
+    throw new Error(err.detail || 'ElderShield audio analysis failed');
+  }
+  return res.json();
+}
+
+export function getLiveCallWsUrl(): string {
+  if (API_BASE) {
+    try {
+      const url = new URL(API_BASE);
+      const wsProto = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProto}//${url.host}/ws/live-call`;
+    } catch {
+      // fallback
+    }
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws/live-call`;
 }
 
 export async function fetchRecentAnalyses(limit = 15): Promise<RiskAssessment[]> {
