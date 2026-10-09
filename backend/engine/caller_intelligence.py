@@ -174,16 +174,20 @@ class CallerIntelligenceService:
             if is_registered:
                 break
 
-        # Impersonation & Spoofing Conflict Check:
-        # If the caller claims to be an institution, but calls from a personal mobile or VoIP number
+        # Impersonation & Potential Identity Conflict Check:
+        # Separate number parsing metadata from claimed identity and verified identity
         spoofing_suspected = False
         conflict_details = None
         reputation_score = 30.0 # Standard personal neutral baseline
         verdict = "NORMAL_PERSONAL"
-        advisory = f"Standard {type_str.lower()} line registered in {geo_location} ({carrier_name})."
+        conflict_status = "NO_CONFLICT_UNVERIFIED"
+        verified_identity = None
+        advisory = f"Standard {type_str.lower()} line registered under {geo_location} ({carrier_name})."
 
         if is_registered:
             verdict = "VERIFIED_INSTITUTION"
+            conflict_status = "VERIFIED_MATCH"
+            verified_identity = reg_org_name
             reputation_score = 5.0
             advisory = f"Verified official telephone line of {reg_org_name}."
 
@@ -201,17 +205,19 @@ class CallerIntelligenceService:
                 # But is calling from an unverified mobile SIM or VoIP line!
                 if type_str in ["MOBILE", "VOIP", "UNKNOWN"]:
                     spoofing_suspected = True
-                    reputation_score = 88.0 # High risk spoof conflict
-                    verdict = "SPOOF_CONFLICT"
+                    reputation_score = 80.0 # Elevated caution due to unverified channel
+                    verdict = "POTENTIAL_IDENTITY_CONFLICT"
+                    conflict_status = "POTENTIAL_IDENTITY_CONFLICT"
                     conflict_details = (
-                        f"CRITICAL CONFLICT: Caller claims to represent {matched_inst['display_name']}, "
-                        f"but is calling from an unverified {type_str.lower()} number ({nat_fmt}) "
-                        f"instead of the institution's official registered helpline ({', '.join(matched_inst['official_numbers'][:2])})."
+                        f"POTENTIAL IDENTITY CONFLICT: Caller claims to represent {matched_inst['display_name']}, "
+                        f"but is calling from an unverified {type_str.lower()} line ({nat_fmt}) "
+                        f"instead of the institution's official registered helpline ({', '.join(matched_inst['official_numbers'][:2])}). "
+                        f"This may indicate an unverified third-party representative, an employee mobile, or caller ID spoofing."
                     )
                     advisory = (
-                        f"⚠️ WARNING: Official representatives of {matched_inst['display_name']} do NOT conduct "
-                        f"official business or fraud investigations from personal mobile phone numbers. "
-                        f"Hang up and dial their official number directly: {matched_inst['official_numbers'][0]}."
+                        f"⚠️ CAUTION: Official representatives of {matched_inst['display_name']} do NOT conduct "
+                        f"official business, security checks, or fund verifications from personal mobile numbers. "
+                        f"Verify independently through their official channel: {matched_inst['official_numbers'][0]}."
                     )
                     official_helplines = matched_inst["official_numbers"]
 
@@ -219,7 +225,7 @@ class CallerIntelligenceService:
         if region_code != "IN" and not is_registered:
             reputation_score = max(reputation_score, 75.0)
             verdict = "HIGH_RISK_SUSPECT"
-            advisory = f"International call originating from {region_code}. Scammers frequently use foreign SIMs or virtual numbers to evade local cybercrime enforcement."
+            advisory = f"International call originating from {region_code}. Telecom metadata indicates foreign numbering allocation."
 
         return CallerIntelligenceResult(
             raw_input=raw,
@@ -229,10 +235,14 @@ class CallerIntelligenceService:
             country_code=region_code,
             carrier=carrier_name,
             geographic_region=geo_location,
+            metadata_disclaimer="Carrier and telecom circle metadata reflect ITU numbering plan allocations, not verified physical GPS location or live roaming carrier (MNP and VoIP masking may apply).",
             number_type=type_str, # type: ignore
+            claimed_organization=claimed_organization,
+            verified_caller_identity=verified_identity,
             is_registered_institution=is_registered,
             registered_organization=reg_org_name,
             official_helplines=official_helplines,
+            identity_conflict_status=conflict_status, # type: ignore
             spoofing_suspected=spoofing_suspected,
             spoofing_conflict_details=conflict_details,
             reputation_score=reputation_score,

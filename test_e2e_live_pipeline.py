@@ -116,7 +116,7 @@ def run_e2e_verification():
         })
         intel_msg = ws.receive_json()
         assert intel_msg["type"] == "caller_intelligence"
-        assert intel_msg["caller_data"]["verdict"] == "SPOOF_CONFLICT"
+        assert intel_msg["caller_data"]["verdict"] in ["POTENTIAL_IDENTITY_CONFLICT", "SPOOF_CONFLICT"]
         spoof_warn = ws.receive_json()
         assert spoof_warn["type"] == "warning"
         print(f"  Caller Intelligence Verified: Spoofing Conflict Caught for {intel_msg['caller_data']['national_format']}")

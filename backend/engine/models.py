@@ -111,13 +111,21 @@ class CallerIntelligenceResult(BaseModel):
     country_code: Optional[str] = None
     carrier: Optional[str] = None
     geographic_region: Optional[str] = None
+    metadata_disclaimer: str = Field(
+        default="Carrier and circle metadata reflect ITU number plan allocation, not verified physical GPS location or live roaming carrier.",
+        description="Explicit limitation regarding Mobile Number Portability and VoIP masking"
+    )
     number_type: Literal["MOBILE", "FIXED_LINE", "TOLL_FREE", "VOIP", "PREMIUM_RATE", "SPECIAL", "UNKNOWN"]
+    claimed_organization: Optional[str] = None
+    verified_caller_identity: Optional[str] = None
     is_registered_institution: bool = False
     registered_organization: Optional[str] = None
     official_helplines: List[str] = Field(default_factory=list)
+    identity_conflict_status: Literal["VERIFIED_MATCH", "POTENTIAL_IDENTITY_CONFLICT", "NO_CONFLICT_UNVERIFIED", "UNKNOWN"] = "UNKNOWN"
     spoofing_suspected: bool = False
     spoofing_conflict_details: Optional[str] = None
     reputation_score: float = Field(default=50.0, ge=0, le=100)
-    verdict: Literal["VERIFIED_INSTITUTION", "NORMAL_PERSONAL", "SPOOF_CONFLICT", "HIGH_RISK_SUSPECT", "INVALID_FORMAT"]
+    verdict: Literal["VERIFIED_INSTITUTION", "NORMAL_PERSONAL", "POTENTIAL_IDENTITY_CONFLICT", "SPOOF_CONFLICT", "HIGH_RISK_SUSPECT", "INVALID_FORMAT"]
     advisory: str
+
 
