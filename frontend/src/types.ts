@@ -27,6 +27,16 @@ export interface EvidenceItem {
   contribution: string;
 }
 
+export type OtpRiskState =
+  | 'IDLE'
+  | 'CONNECTING'
+  | 'MONITORING'
+  | 'OTP_RISK_DETECTED'
+  | 'URGENT_INTERVENTION'
+  | 'SAFE_OR_INCONCLUSIVE'
+  | 'ERROR'
+  | 'RECONNECTING';
+
 export interface TurnEvaluation {
   turn_number: number;
   speaker: string;
@@ -36,6 +46,8 @@ export interface TurnEvaluation {
   newly_detected_signals: string[];
   turn_rationale: string;
   highlighted_spans?: string[];
+  otp_state?: string;
+  is_otp_request?: boolean;
 }
 
 export interface BehavioralSignalsSummary {
@@ -69,6 +81,13 @@ export interface RiskAssessment {
   raw_transcript?: string;
   is_demo: boolean;
   demo_scenario_id?: string | null;
+  otp_state?: OtpRiskState;
+  otp_disclosure_risk?: boolean;
+  urgent_intervention_required?: boolean;
+  intervention_heading?: string;
+  intervention_spoken_text?: string;
+  intervention_language?: string;
+  event_id?: string;
 }
 
 export interface ProgressionResponse {
@@ -79,6 +98,12 @@ export interface ProgressionResponse {
   decision: DecisionType;
   reasons: string[];
   analysis_method: string;
+  otp_state?: OtpRiskState;
+  urgent_intervention_required?: boolean;
+  intervention_heading?: string;
+  intervention_spoken_text?: string;
+  intervention_language?: string;
+  event_id?: string;
 }
 
 export interface DemoScenario {
@@ -133,6 +158,12 @@ export interface LiveRiskUpdate {
   reasons: string[];
   is_final: boolean;
   timestamp: number;
+  otp_state?: OtpRiskState;
+  otp_disclosure_risk?: boolean;
+  urgent_intervention_required?: boolean;
+  intervention_heading?: string;
+  intervention_spoken_text?: string;
+  event_id?: string;
 }
 
 export interface LiveWarning {
@@ -140,6 +171,23 @@ export interface LiveWarning {
   severity: 'CRITICAL' | 'HIGH';
   title: string;
   message: string;
+  evidence_quotes: string[];
+  timestamp: number;
+  event_id?: string;
+  otp_state?: OtpRiskState;
+  spoken_text?: string;
+  language?: string;
+}
+
+export interface OtpInterventionEvent {
+  type: 'otp_intervention';
+  event_id: string;
+  session_id: string;
+  otp_state: OtpRiskState;
+  heading: string;
+  message: string;
+  spoken_text: string;
+  language: string;
   evidence_quotes: string[];
   timestamp: number;
 }
@@ -176,11 +224,11 @@ export interface CallerIntelligenceResult {
   reputation_score: number;
   caller_authenticated?: boolean;
   authentication_notice?: string;
-  caller_classification?: 'KNOWN_REGISTRY_MATCH' | 'UNRECOGNIZED_NUMBER' | 'INVALID_NUMBER' | 'POTENTIALLY_SUSPICIOUS' | 'CALLER_IDENTITY_UNVERIFIED';
+  caller_classification?: 'CONFIRMED_SCAM' | 'KNOWN_REGISTRY_MATCH' | 'UNRECOGNIZED_NUMBER' | 'INVALID_NUMBER' | 'POTENTIALLY_SUSPICIOUS' | 'CALLER_IDENTITY_UNVERIFIED';
   number_format_validity?: 'VALID' | 'INVALID' | 'MALFORMED';
   registry_matching?: 'MATCHED_LOCAL_REGISTRY' | 'NO_REGISTRY_MATCH';
   caller_reputation_status?: 'REPUTATION_UNAVAILABLE' | 'INDEPENDENT_EVIDENCE_FOUND' | 'STATIC_REGISTRY_ONLY';
-  verdict: 'KNOWN_REGISTRY_MATCH' | 'UNRECOGNIZED_NUMBER' | 'INVALID_NUMBER' | 'POTENTIALLY_SUSPICIOUS' | 'CALLER_IDENTITY_UNVERIFIED' | 'VERIFIED_INSTITUTION' | 'NORMAL_PERSONAL' | 'POTENTIAL_IDENTITY_CONFLICT' | 'SPOOF_CONFLICT' | 'HIGH_RISK_SUSPECT' | 'INVALID_FORMAT';
+  verdict: 'CONFIRMED_SCAM' | 'KNOWN_REGISTRY_MATCH' | 'UNRECOGNIZED_NUMBER' | 'INVALID_NUMBER' | 'POTENTIALLY_SUSPICIOUS' | 'CALLER_IDENTITY_UNVERIFIED' | 'VERIFIED_INSTITUTION' | 'NORMAL_PERSONAL' | 'POTENTIAL_IDENTITY_CONFLICT' | 'SPOOF_CONFLICT' | 'HIGH_RISK_SUSPECT' | 'INVALID_FORMAT';
   advisory: string;
   evidence_source?: string;
   lookup_timestamp?: string;

@@ -33,6 +33,7 @@ class LiveCallSession:
         self.is_active = True
         self.unprocessed_offset = 0
         self.min_chunk_bytes_to_transcribe = 32000 * 2 # ~2.0 seconds of 16kHz 16-bit PCM
+        self.last_segment_was_interim = False
 
     def add_audio_chunk(self, chunk_bytes: bytes, seq: int) -> int:
         self.last_activity = time.time()
@@ -110,15 +111,27 @@ class LiveCallSession:
         # Redact sensitive data from stored dialogue turns (Workstream E)
         sanitized_text = redact_sensitive_data(clean_text)
 
-        # Segment deduplication: check if identical to recent turn from same speaker
+        # Check if updating an in-flight utterance from the same speaker
         if self.turns and self.turns[-1].speaker.lower() == speaker.lower():
             prev_turn = self.turns[-1]
             if prev_turn.text.lower() == sanitized_text.lower():
                 # Duplicate segment, reuse last assessment
+                self.last_segment_was_interim = not is_final
                 return self.last_assessment
-            elif sanitized_text.lower().startswith(prev_turn.text.lower()) and len(sanitized_text) > len(prev_turn.text):
-                # Continuation of interim utterance: update in-place
+            elif self.last_segment_was_interim:
+                # Continuation/refinement of ongoing interim utterance: update in-place
                 prev_turn.text = sanitized_text
+                self.last_segment_was_interim = not is_final
+                assessment = engine.analyze(
+                    turns=self.turns,
+                    raw_transcript="\n".join([f"{t.speaker}: {t.text}" for t in self.turns])
+                )
+                self.last_assessment = assessment
+                return assessment
+            elif sanitized_text.lower().startswith(prev_turn.text.lower()) and len(sanitized_text) > len(prev_turn.text):
+                # Continuation of utterance: update in-place
+                prev_turn.text = sanitized_text
+                self.last_segment_was_interim = not is_final
                 assessment = engine.analyze(
                     turns=self.turns,
                     raw_transcript="\n".join([f"{t.speaker}: {t.text}" for t in self.turns])
@@ -136,6 +149,7 @@ class LiveCallSession:
             text=sanitized_text
         )
         self.turns.append(turn)
+        self.last_segment_was_interim = not is_final
 
         # Re-evaluate live progressive risk
         assessment = engine.analyze(

@@ -29,6 +29,17 @@ class EvidenceItem(BaseModel):
     severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
     contribution: str = Field(..., description="Contribution or impact to risk assessment score")
 
+OtpRiskState = Literal[
+    "IDLE",
+    "CONNECTING",
+    "MONITORING",
+    "OTP_RISK_DETECTED",
+    "URGENT_INTERVENTION",
+    "SAFE_OR_INCONCLUSIVE",
+    "ERROR",
+    "RECONNECTING"
+]
+
 class TurnEvaluation(BaseModel):
     turn_number: int
     speaker: str
@@ -38,6 +49,8 @@ class TurnEvaluation(BaseModel):
     newly_detected_signals: List[str]
     turn_rationale: str
     highlighted_spans: List[str] = Field(default_factory=list)
+    otp_state: Optional[str] = None
+    is_otp_request: bool = False
 
 class BehavioralSignalsSummary(BaseModel):
     impersonation: bool = False
@@ -72,6 +85,15 @@ class RiskAssessment(BaseModel):
     is_demo: bool = False
     demo_scenario_id: Optional[str] = None
 
+    # OTP Disclosure Prevention & Active Intervention
+    otp_state: OtpRiskState = "MONITORING"
+    otp_disclosure_risk: bool = False
+    urgent_intervention_required: bool = False
+    intervention_heading: Optional[str] = None
+    intervention_spoken_text: Optional[str] = None
+    intervention_language: Optional[str] = "en"
+    event_id: Optional[str] = None
+
 class AnalyzeRequest(BaseModel):
     transcript: Optional[str] = None
     turns: Optional[List[ConversationTurn]] = None
@@ -86,6 +108,12 @@ class ProgressionResponse(BaseModel):
     decision: DecisionType
     reasons: List[str]
     analysis_method: str = "rule-based-behavioral-v1"
+    otp_state: Optional[OtpRiskState] = None
+    urgent_intervention_required: bool = False
+    intervention_heading: Optional[str] = None
+    intervention_spoken_text: Optional[str] = None
+    intervention_language: Optional[str] = None
+    event_id: Optional[str] = None
 
 class DemoScenario(BaseModel):
     id: str
@@ -131,6 +159,7 @@ class CallerIntelligenceResult(BaseModel):
     registry_matching: Literal["MATCHED_LOCAL_REGISTRY", "NO_REGISTRY_MATCH"] = "NO_REGISTRY_MATCH"
     caller_reputation_status: Literal["REPUTATION_UNAVAILABLE", "INDEPENDENT_EVIDENCE_FOUND", "STATIC_REGISTRY_ONLY"] = "REPUTATION_UNAVAILABLE"
     caller_classification: Literal[
+        "CONFIRMED_SCAM",
         "KNOWN_REGISTRY_MATCH",
         "UNRECOGNIZED_NUMBER",
         "INVALID_NUMBER",
@@ -146,6 +175,7 @@ class CallerIntelligenceResult(BaseModel):
     spoofing_conflict_details: Optional[str] = None
     reputation_score: float = Field(default=50.0, ge=0, le=100)
     verdict: Literal[
+        "CONFIRMED_SCAM",
         "KNOWN_REGISTRY_MATCH",
         "UNRECOGNIZED_NUMBER",
         "INVALID_NUMBER",
@@ -196,6 +226,8 @@ class UnifiedProtectionResult(BaseModel):
     alert_required: bool = False
     warning_title: Optional[str] = None
     warning_message: Optional[str] = None
+    otp_state: Optional[OtpRiskState] = "MONITORING"
+    urgent_intervention_required: bool = False
 
 
 

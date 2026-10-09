@@ -16,8 +16,18 @@ import {
   FileAudio,
   UserCheck,
   ShieldCheck,
+  ShieldAlert,
+  X,
 } from 'lucide-react';
-import type { RiskAssessment, RiskLevel, LiveRiskUpdate, LiveWarning, CallerIntelligenceResult } from '../types';
+import type {
+  RiskAssessment,
+  RiskLevel,
+  LiveRiskUpdate,
+  LiveWarning,
+  CallerIntelligenceResult,
+  OtpRiskState,
+  OtpInterventionEvent,
+} from '../types';
 import { getLiveCallWsUrl, analyzeAudioFile, analyzeConversation, analyzeProgression, lookupCallerIdentity } from '../api';
 import { playRiskAlert } from '../utils/audioAlert';
 
@@ -124,6 +134,11 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const [micAudioLevel, setMicAudioLevel] = useState<number>(0);
   const [micError, setMicError] = useState<string | null>(null);
 
+  // OTP Disclosure Prevention state machine
+  const [otpState, setOtpState] = useState<OtpRiskState>('IDLE');
+  const [activeOtpIntervention, setActiveOtpIntervention] = useState<OtpInterventionEvent | null>(null);
+  const [isWarningDismissed, setIsWarningDismissed] = useState<boolean>(false);
+
   // Upload state
   const [isUploadingAudio, setIsUploadingAudio] = useState<boolean>(false);
   const [audioUploadFeedback, setAudioUploadFeedback] = useState<string | null>(null);
@@ -139,20 +154,56 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const isPausedRef = useRef<boolean>(false);
   const lastWarningFingerprintRef = useRef<string>('');
 
+  const lastWarningTimeRef = useRef<number>(0);
+
   // Senior-friendly audible announcement with speech synthesis
   const announceAudibleWarning = (title: string, message: string) => {
     if (!soundAlertsEnabled) return;
+    const now = Date.now();
     const fingerprint = `${title}:${message}`;
-    if (lastWarningFingerprintRef.current === fingerprint) return;
+    // Deduplicate identical alerts or repeated announcements within 4 seconds
+    if (lastWarningFingerprintRef.current === fingerprint && (now - lastWarningTimeRef.current) < 4000) return;
     lastWarningFingerprintRef.current = fingerprint;
+    lastWarningTimeRef.current = now;
 
     playRiskAlert('HIGH_RISK');
     if ('speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance('ElderShield Alert: Potential scam call detected. Do not share one-time passwords or transfer money.');
+        const speechText = message.trim() ? `${title}. ${message}` : title;
+        const utterance = new SpeechSynthesisUtterance(speechText);
         utterance.rate = 0.95;
         utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  // Dedicated audible intervention announcement for OTP solicitation
+  const announceAudibleIntervention = (spokenText: string, langHint?: string) => {
+    if (!soundAlertsEnabled) return;
+    const now = Date.now();
+    // Deduplicate identical alerts or repeated announcements within 5 seconds
+    if (lastWarningFingerprintRef.current === spokenText && (now - lastWarningTimeRef.current) < 5000) return;
+    lastWarningFingerprintRef.current = spokenText;
+    lastWarningTimeRef.current = now;
+
+    playRiskAlert('HIGH_RISK');
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(spokenText);
+        utterance.rate = 0.9;
+        utterance.pitch = 1.0;
+        if (langHint === 'hi' || langHint === 'hi-IN') {
+          utterance.lang = 'hi-IN';
+        } else if (langHint === 'te' || langHint === 'te-IN') {
+          utterance.lang = 'te-IN';
+        } else {
+          utterance.lang = 'en-IN';
+        }
         window.speechSynthesis.speak(utterance);
       } catch {
         // ignore
@@ -165,43 +216,50 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const [claimedOrg, setClaimedOrg] = useState<string>('');
   const [callerIntel, setCallerIntel] = useState<CallerIntelligenceResult | null>(null);
   const [isLookingUpCaller, setIsLookingUpCaller] = useState<boolean>(false);
+  const [phoneValidationError, setPhoneValidationError] = useState<string | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
 
   // Handle caller verification
   const handleVerifyCaller = async (phoneToVerify?: string, orgToVerify?: string) => {
     const num = phoneToVerify !== undefined ? phoneToVerify : callerPhone;
     const org = orgToVerify !== undefined ? orgToVerify : claimedOrg;
-    if (!num.trim()) return;
+
+    // Reset previous state to prevent stale results from lingering
+    setPhoneValidationError(null);
+    setLookupError(null);
+    setCallerIntel(null);
+
+    const trimmed = num.trim();
+    if (!trimmed) {
+      setPhoneValidationError('Please enter a phone number to verify (e.g., +91 98490 12345 or 1800 1234).');
+      return;
+    }
+
+    const digitsOnly = trimmed.replace(/\D/g, '');
+    if (digitsOnly.length < 3) {
+      setPhoneValidationError('Phone number must contain at least 3 digits.');
+      return;
+    }
 
     setIsLookingUpCaller(true);
     try {
-      const result = await lookupCallerIdentity(num, org);
+      const result = await lookupCallerIdentity(trimmed, org);
       setCallerIntel(result);
 
       // Send caller_info to WebSocket if connected
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'caller_info',
-          phone_number: num,
+          phone_number: trimmed,
           claimed_organization: org || undefined
         }));
       }
 
-      if (result.spoofing_suspected) {
-        setActiveWarning({
-          type: 'warning',
-          severity: 'CRITICAL',
-          title: 'IDENTITY SPOOFING CONFLICT DETECTED',
-          message: result.advisory,
-          evidence_quotes: [
-            `Caller claimed: ${org || 'Official Institution'}`,
-            `Actual Origin: ${result.national_format || num} (${result.number_type} line)`
-          ],
-          timestamp: Date.now()
-        });
-        announceAudibleWarning('IDENTITY SPOOFING CONFLICT DETECTED', result.advisory);
-      }
-    } catch (e) {
+      // Quiet by default: Caller reputation data is displayed in the Caller Intelligence panel.
+      // Behavioral sirens/speech are preserved strictly for ongoing conversation threat detection.
+    } catch (e: unknown) {
       console.warn('Caller lookup error:', e);
+      setLookupError('Telecom registry lookup failed. Please verify your connection and try again.');
     } finally {
       setIsLookingUpCaller(false);
     }
@@ -236,8 +294,13 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
     setCurrentScore(0);
     setCurrentRiskLevel('LOW_RISK');
     setActiveWarning(null);
+    setActiveOtpIntervention(null);
+    setIsWarningDismissed(false);
+    setOtpState('IDLE');
     setFinalAssessment(null);
     setCallerIntel(null);
+    setPhoneValidationError(null);
+    setLookupError(null);
     setSessionDuration(0);
     lastWarningFingerprintRef.current = '';
   };
@@ -281,6 +344,9 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const startLiveMonitoring = async () => {
     setMicError(null);
     setActiveWarning(null);
+    setActiveOtpIntervention(null);
+    setIsWarningDismissed(false);
+    setOtpState('CONNECTING');
     setTurns([]);
     setCurrentScore(0);
     setCurrentRiskLevel('LOW_RISK');
@@ -318,6 +384,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
       ws.onopen = () => {
         setConnectionStatus('connected');
+        setOtpState('MONITORING');
         setIsMonitoring(true);
         setSessionDuration(0);
 
@@ -335,6 +402,27 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
             const update = data as LiveRiskUpdate;
             setCurrentScore(update.risk_score);
             setCurrentRiskLevel(update.risk_level);
+            if (update.otp_state) {
+              setOtpState(update.otp_state);
+            }
+
+            if (update.urgent_intervention_required && update.intervention_spoken_text) {
+              const interventionEvt: OtpInterventionEvent = {
+                type: 'otp_intervention',
+                event_id: update.event_id || `evt_${Date.now()}`,
+                session_id: update.session_id,
+                otp_state: update.otp_state || 'URGENT_INTERVENTION',
+                heading: update.intervention_heading || 'STOP! DO NOT SHARE YOUR OTP',
+                message: update.intervention_spoken_text,
+                spoken_text: update.intervention_spoken_text,
+                language: selectedLanguage.split('-')[0] || 'en',
+                evidence_quotes: update.reasons || [],
+                timestamp: Date.now(),
+              };
+              setActiveOtpIntervention(interventionEvt);
+              setIsWarningDismissed(false);
+              announceAudibleIntervention(interventionEvt.spoken_text, interventionEvt.language);
+            }
 
             // Update turn list
             setTurns((prev) => {
@@ -359,13 +447,23 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
               return [...prev, updatedTurn];
             });
 
-            if (soundAlertsEnabled && update.risk_level === 'HIGH_RISK') {
-              announceAudibleWarning('HIGH RISK FRAUD DETECTED', update.reasons[0] || 'Urgent scam activity detected.');
-            }
+          } else if (data.type === 'otp_intervention') {
+            const otpEvt = data as OtpInterventionEvent;
+            setOtpState(otpEvt.otp_state);
+            setActiveOtpIntervention(otpEvt);
+            setIsWarningDismissed(false);
+            announceAudibleIntervention(otpEvt.spoken_text, otpEvt.language);
           } else if (data.type === 'warning') {
             const warning = data as LiveWarning;
             setActiveWarning(warning);
-            announceAudibleWarning(warning.title, warning.message);
+            if (warning.otp_state) {
+              setOtpState(warning.otp_state);
+            }
+            if (warning.spoken_text) {
+              announceAudibleIntervention(warning.spoken_text, warning.language);
+            } else if (warning.severity === 'CRITICAL' || warning.otp_state === 'URGENT_INTERVENTION') {
+              announceAudibleWarning(warning.title, warning.message);
+            }
           } else if (data.type === 'caller_intelligence') {
             setCallerIntel(data.caller_data as CallerIntelligenceResult);
           } else if (data.type === 'session_summary') {
@@ -379,10 +477,12 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
       ws.onerror = (e) => {
         console.warn('WebSocket error, falling back to local speech recognition:', e);
         setConnectionStatus('disconnected');
+        setOtpState((prev) => (prev === 'IDLE' ? 'IDLE' : 'ERROR'));
       };
 
       ws.onclose = () => {
         setConnectionStatus('disconnected');
+        setOtpState((prev) => (prev === 'IDLE' ? 'IDLE' : 'RECONNECTING'));
       };
 
       // 4. Set up Web Speech API for real-time streaming speech recognition
@@ -501,6 +601,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const stopLiveMonitoring = async () => {
     setIsMonitoring(false);
     setIsSimulating(false);
+    setOtpState('IDLE');
 
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -595,6 +696,9 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
     if (!sim) return;
 
     setActiveWarning(null);
+    setActiveOtpIntervention(null);
+    setIsWarningDismissed(false);
+    setOtpState('MONITORING');
     setTurns([]);
     setCurrentScore(0);
     setCurrentRiskLevel('LOW_RISK');
@@ -637,6 +741,9 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
         setCurrentScore(progression.final_risk_score);
         setCurrentRiskLevel(progression.final_risk_level);
+        if (progression.otp_state) {
+          setOtpState(progression.otp_state);
+        }
 
         setTurns((prev) => [
           ...prev,
@@ -653,7 +760,23 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
           },
         ]);
 
-        if (progression.final_risk_level === 'HIGH_RISK') {
+        if (progression.urgent_intervention_required || progression.otp_state === 'URGENT_INTERVENTION') {
+          const otpEvt: OtpInterventionEvent = {
+            type: 'otp_intervention',
+            event_id: progression.event_id || `sim_${idx + 1}`,
+            session_id: `sim_session_${Date.now()}`,
+            otp_state: progression.otp_state || 'URGENT_INTERVENTION',
+            heading: progression.intervention_heading || 'STOP! DO NOT SHARE YOUR OTP',
+            message: progression.intervention_spoken_text || 'STOP! Do not share your OTP. Never tell anyone your verification code. End the call if they are pressuring you.',
+            spoken_text: progression.intervention_spoken_text || 'STOP! Do not share your OTP. Never tell anyone your verification code. End the call if they are pressuring you.',
+            language: selectedLanguage.split('-')[0] || 'en',
+            evidence_quotes: [turnData.text],
+            timestamp: Date.now(),
+          };
+          setActiveOtpIntervention(otpEvt);
+          setIsWarningDismissed(false);
+          announceAudibleIntervention(otpEvt.spoken_text, otpEvt.language);
+        } else if (progression.final_risk_level === 'HIGH_RISK') {
           setActiveWarning({
             type: 'warning',
             severity: 'CRITICAL',
@@ -710,7 +833,27 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
       setTurns(parsedTurns);
 
-      if (assessment.risk_level === 'HIGH_RISK') {
+      if (assessment.otp_state) {
+        setOtpState(assessment.otp_state);
+      }
+
+      if (assessment.urgent_intervention_required || assessment.otp_state === 'URGENT_INTERVENTION') {
+        const otpEvt: OtpInterventionEvent = {
+          type: 'otp_intervention',
+          event_id: assessment.event_id || `audio_${Date.now()}`,
+          session_id: `upload_${Date.now()}`,
+          otp_state: assessment.otp_state || 'URGENT_INTERVENTION',
+          heading: assessment.intervention_heading || 'STOP! DO NOT SHARE YOUR OTP',
+          message: assessment.intervention_spoken_text || 'STOP! Do not share your OTP. Never tell anyone your verification code. End the call if they are pressuring you.',
+          spoken_text: assessment.intervention_spoken_text || 'STOP! Do not share your OTP. Never tell anyone your verification code. End the call if they are pressuring you.',
+          language: assessment.intervention_language || selectedLanguage.split('-')[0] || 'en',
+          evidence_quotes: assessment.evidence.map((e) => e.exact_quote).slice(0, 2),
+          timestamp: Date.now(),
+        };
+        setActiveOtpIntervention(otpEvt);
+        setIsWarningDismissed(false);
+        announceAudibleIntervention(otpEvt.spoken_text, otpEvt.language);
+      } else if (assessment.risk_level === 'HIGH_RISK') {
         setActiveWarning({
           type: 'warning',
           severity: 'CRITICAL',
@@ -790,7 +933,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
             )}
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 Live Call Scam Monitor
               </h2>
@@ -823,6 +966,43 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                   : isSimulating
                   ? '🟣 DEMO SIMULATION (SCRIPTED SCENARIO)'
                   : '⚪ STANDBY (READY TO LISTEN)'}
+              </span>
+
+              {/* OTP Disclosure Prevention State Machine Pill */}
+              <span style={{
+                fontSize: '0.74rem',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                backgroundColor:
+                  otpState === 'URGENT_INTERVENTION' ? 'rgba(239, 68, 68, 0.25)' :
+                  otpState === 'OTP_RISK_DETECTED' ? 'rgba(245, 158, 11, 0.2)' :
+                  otpState === 'SAFE_OR_INCONCLUSIVE' ? 'rgba(16, 185, 129, 0.15)' :
+                  otpState === 'MONITORING' ? 'rgba(6, 182, 212, 0.15)' :
+                  'rgba(100, 116, 139, 0.2)',
+                color:
+                  otpState === 'URGENT_INTERVENTION' ? '#fca5a5' :
+                  otpState === 'OTP_RISK_DETECTED' ? '#fcd34d' :
+                  otpState === 'SAFE_OR_INCONCLUSIVE' ? '#6ee7b7' :
+                  otpState === 'MONITORING' ? '#67e8f9' :
+                  '#94a3b8',
+                border: `1.5px solid ${
+                  otpState === 'URGENT_INTERVENTION' ? 'var(--risk-high-border)' :
+                  otpState === 'OTP_RISK_DETECTED' ? 'var(--risk-suspicious-border)' :
+                  otpState === 'SAFE_OR_INCONCLUSIVE' ? 'var(--risk-low-border)' :
+                  otpState === 'MONITORING' ? 'rgba(6, 182, 212, 0.5)' :
+                  'var(--border-subtle)'
+                }`,
+              }}>
+                {otpState === 'IDLE' && '🛡️ OTP SHIELD: IDLE'}
+                {otpState === 'CONNECTING' && '🟡 OTP SHIELD: CONNECTING'}
+                {otpState === 'MONITORING' && '🟢 OTP SHIELD: SILENT MONITORING'}
+                {otpState === 'OTP_RISK_DETECTED' && '🟠 OTP SHIELD: OTP RISK DETECTED'}
+                {otpState === 'URGENT_INTERVENTION' && '🚨 OTP SHIELD: URGENT INTERVENTION'}
+                {otpState === 'SAFE_OR_INCONCLUSIVE' && '🟢 OTP SHIELD: SAFE / NORMAL'}
+                {otpState === 'ERROR' && '⚠️ OTP SHIELD: ERROR'}
+                {otpState === 'RECONNECTING' && '🔄 OTP SHIELD: RECONNECTING'}
               </span>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
@@ -873,8 +1053,174 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
         </div>
       </div>
 
-      {/* CRITICAL EMERGENCY WARNING OVERLAY / BANNER */}
-      {activeWarning && (
+      {/* DEDICATED ACTIONABLE OTP INTERVENTION BANNER */}
+      {activeOtpIntervention && !isWarningDismissed && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          style={{
+            backgroundColor: '#450a0a',
+            border: '3px solid #ef4444',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px 28px',
+            boxShadow: '0 0 35px rgba(239, 68, 68, 0.45)',
+            animation: 'pulse 2s infinite',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '18px' }}>
+            <div style={{
+              width: '52px',
+              height: '52px',
+              borderRadius: '50%',
+              backgroundColor: '#ef4444',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#ffffff',
+              flexShrink: 0,
+            }}>
+              <ShieldAlert size={32} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                <h3 style={{
+                  fontSize: '1.45rem',
+                  fontWeight: 900,
+                  color: '#fee2e2',
+                  letterSpacing: '0.02em',
+                  margin: 0,
+                }}>
+                  🛑 {activeOtpIntervention.heading}
+                </h3>
+                <span style={{
+                  fontSize: '0.8rem',
+                  fontWeight: 800,
+                  backgroundColor: 'rgba(239, 68, 68, 0.3)',
+                  border: '1px solid #ef4444',
+                  borderRadius: '6px',
+                  color: '#fecaca',
+                  padding: '3px 8px',
+                }}>
+                  HIGH SEVERITY INTERVENTION
+                </span>
+              </div>
+
+              <p style={{
+                fontSize: '1.25rem',
+                fontWeight: 800,
+                color: '#ffffff',
+                margin: '12px 0 14px 0',
+                lineHeight: 1.45,
+                textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+              }}>
+                {activeOtpIntervention.spoken_text}
+              </p>
+
+              {activeOtpIntervention.evidence_quotes && activeOtpIntervention.evidence_quotes.length > 0 && (
+                <div style={{
+                  padding: '12px 16px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                  borderRadius: 'var(--radius-sm)',
+                  borderLeft: '4px solid #ef4444',
+                  marginBottom: '16px',
+                }}>
+                  <div style={{ fontSize: '0.82rem', color: '#fca5a5', fontWeight: 800, textTransform: 'uppercase' }}>
+                    Flagged Predator Evidence:
+                  </div>
+                  <div style={{ fontSize: '1rem', color: '#f8fafc', fontStyle: 'italic', marginTop: '4px' }}>
+                    "{activeOtpIntervention.evidence_quotes[0]}"
+                  </div>
+                </div>
+              )}
+
+              <div style={{
+                padding: '12px 16px',
+                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: '18px',
+                fontSize: '0.95rem',
+                color: '#fef2f2',
+                lineHeight: 1.5,
+              }}>
+                <div style={{ fontWeight: 800, marginBottom: '4px' }}>Senior Safety Rules:</div>
+                <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                  <li><strong>Never tell anyone your verification code:</strong> Bank managers and police officers will NEVER demand your OTP or PIN.</li>
+                  <li><strong>End the call if pressured:</strong> Fraudsters use urgency and fake arrest threats to confuse you.</li>
+                </ul>
+              </div>
+
+              {/* Protective Action Buttons */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={stopLiveMonitoring}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 22px',
+                    backgroundColor: '#dc2626',
+                    border: 'none',
+                    borderRadius: 'var(--radius-md)',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
+                  }}
+                >
+                  <PhoneOff size={20} />
+                  <span>Hang Up & Terminate Call Protection</span>
+                </button>
+
+                <a
+                  href="tel:1930"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    backgroundColor: '#1e293b',
+                    border: '1.5px solid #ef4444',
+                    borderRadius: 'var(--radius-md)',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    fontSize: '0.95rem',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <PhoneCall size={18} color="#ef4444" />
+                  <span>Call Cyber Helpline (1930)</span>
+                </a>
+
+                <button
+                  onClick={() => setIsWarningDismissed(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '10px 16px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid #7f1d1d',
+                    borderRadius: 'var(--radius-md)',
+                    color: '#fca5a5',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    marginLeft: 'auto',
+                  }}
+                  title="Dismiss this visual warning. Does not mute future threat alerts or lower risk score."
+                >
+                  <X size={16} />
+                  <span>Dismiss Warning (I will keep my secret safe)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GENERAL HIGH RISK WARNING OVERLAY / BANNER */}
+      {!activeOtpIntervention && activeWarning && !isWarningDismissed && (
         <div style={{
           backgroundColor: 'rgba(239, 68, 68, 0.22)',
           border: '2.5px solid var(--risk-high)',
@@ -898,10 +1244,28 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
               <AlertTriangle size={28} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fca5a5', letterSpacing: '0.02em' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fca5a5', letterSpacing: '0.02em', margin: 0 }}>
                   🚨 URGENT SCAM WARNING: SUSPECTED FRAUD DETECTED IN THIS CALL!
                 </h3>
+                <button
+                  onClick={() => setIsWarningDismissed(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 8px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#fca5a5',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                  }}
+                  title="Dismiss warning banner"
+                >
+                  <X size={16} />
+                  <span>Dismiss</span>
+                </button>
               </div>
               <p style={{
                 fontSize: '1.05rem',
@@ -1321,6 +1685,19 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                 />
               </div>
 
+              {phoneValidationError && (
+                <div style={{
+                  padding: '8px 12px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid var(--risk-high-border)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: '#fca5a5',
+                  fontSize: '0.8rem',
+                }}>
+                  {phoneValidationError}
+                </div>
+              )}
+
               <button
                 onClick={() => handleVerifyCaller()}
                 disabled={isLookingUpCaller || !callerPhone.trim()}
@@ -1343,6 +1720,38 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                 <ShieldCheck size={16} />
                 <span>{isLookingUpCaller ? 'Checking Telecom Registries...' : 'Verify Caller Number'}</span>
               </button>
+
+              {lookupError && (
+                <div style={{
+                  padding: '10px 12px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid var(--risk-high-border)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: '#fca5a5',
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                }}>
+                  <span>{lookupError}</span>
+                  <button
+                    onClick={() => handleVerifyCaller()}
+                    style={{
+                      alignSelf: 'flex-start',
+                      padding: '4px 10px',
+                      backgroundColor: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--risk-high-border)',
+                      borderRadius: '4px',
+                      color: '#ffffff',
+                      fontSize: '0.76rem',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                    }}
+                  >
+                    Retry Lookup
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Quick Test Preset Buttons */}
@@ -1351,6 +1760,44 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                 Test Scenarios:
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <button
+                  onClick={() => {
+                    setCallerPhone('+91 99999 00001');
+                    setClaimedOrg('');
+                    handleVerifyCaller('+91 99999 00001', '');
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid var(--risk-high-border)',
+                    borderRadius: '4px',
+                    color: '#fca5a5',
+                    fontSize: '0.72rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  🚨 Confirmed Scam (+91 99999 00001)
+                </button>
+
+                <button
+                  onClick={() => {
+                    setCallerPhone('+91 98765 43210');
+                    setClaimedOrg('');
+                    handleVerifyCaller('+91 98765 43210', '');
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'rgba(148, 163, 184, 0.15)',
+                    border: '1px solid rgba(148, 163, 184, 0.3)',
+                    borderRadius: '4px',
+                    color: '#94a3b8',
+                    fontSize: '0.72rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  📱 Unknown Number (+91 98765 43210)
+                </button>
+
                 <button
                   onClick={() => {
                     setCallerPhone('+91 98490 12345');
@@ -1411,24 +1858,64 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
             </div>
 
             {/* Caller Intelligence Result Badge & Details */}
-            {callerIntel && (
+            {callerIntel && (() => {
+              const isConfirmedScam = callerIntel.caller_classification === 'CONFIRMED_SCAM' || callerIntel.verdict === 'CONFIRMED_SCAM';
+              const isSuspicious = callerIntel.spoofing_suspected || callerIntel.caller_classification === 'POTENTIALLY_SUSPICIOUS' || callerIntel.verdict === 'SPOOF_CONFLICT' || callerIntel.verdict === 'POTENTIAL_IDENTITY_CONFLICT';
+              const isRegistryMatch = callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH' || callerIntel.caller_classification === 'KNOWN_REGISTRY_MATCH';
+              const isInvalidFormat = !callerIntel.is_valid || callerIntel.verdict === 'INVALID_NUMBER' || callerIntel.verdict === 'INVALID_FORMAT' || callerIntel.caller_classification === 'INVALID_NUMBER';
+
+              const cardBg = isConfirmedScam
+                ? 'rgba(239, 68, 68, 0.22)'
+                : isSuspicious
+                ? 'rgba(249, 115, 22, 0.16)'
+                : isRegistryMatch
+                ? 'rgba(245, 158, 11, 0.12)'
+                : isInvalidFormat
+                ? 'rgba(244, 63, 94, 0.12)'
+                : 'var(--bg-surface-elevated)';
+
+              const cardBorder = isConfirmedScam
+                ? '1.5px solid var(--risk-high)'
+                : isSuspicious
+                ? '1.5px solid rgba(249, 115, 22, 0.5)'
+                : isRegistryMatch
+                ? '1px solid rgba(245, 158, 11, 0.4)'
+                : isInvalidFormat
+                ? '1px solid rgba(244, 63, 94, 0.35)'
+                : '1px solid var(--border-subtle)';
+
+              const badgeText = isConfirmedScam
+                ? 'CONFIRMED SCAM'
+                : isSuspicious
+                ? 'SUSPICIOUS (SPOOF RISK)'
+                : isRegistryMatch
+                ? 'KNOWN REGISTRY MATCH (UNAUTHENTICATED)'
+                : isInvalidFormat
+                ? 'INVALID PHONE NUMBER'
+                : 'NO REGISTRY MATCH (UNKNOWN NUMBER)';
+
+              const badgeBg = isConfirmedScam
+                ? '#ef4444'
+                : isSuspicious
+                ? '#f97316'
+                : isRegistryMatch
+                ? '#d97706'
+                : isInvalidFormat
+                ? '#f43f5e'
+                : 'rgba(148, 163, 184, 0.25)';
+
+              const badgeColor = isConfirmedScam || isSuspicious || isRegistryMatch || isInvalidFormat
+                ? '#ffffff'
+                : '#94a3b8';
+
+              return (
               <div style={{
                 padding: '12px 14px',
-                backgroundColor: callerIntel.spoofing_suspected
-                  ? 'rgba(239, 68, 68, 0.16)'
-                  : callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH'
-                  ? 'rgba(245, 158, 11, 0.12)'
-                  : 'var(--bg-surface-elevated)',
-                border: `1px solid ${
-                  callerIntel.spoofing_suspected
-                    ? 'var(--risk-high-border)'
-                    : callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH'
-                    ? 'rgba(245, 158, 11, 0.4)'
-                    : 'var(--border-subtle)'
-                }`,
+                backgroundColor: cardBg,
+                border: cardBorder,
                 borderRadius: 'var(--radius-md)',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
                   <span style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                     {callerIntel.national_format || callerIntel.raw_input}
                   </span>
@@ -1438,24 +1925,78 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                     textTransform: 'uppercase',
                     padding: '2px 7px',
                     borderRadius: '4px',
-                    backgroundColor: callerIntel.spoofing_suspected
-                      ? 'var(--risk-high)'
-                      : callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH'
-                      ? '#d97706'
-                      : !callerIntel.is_valid
-                      ? '#ef4444'
-                      : 'rgba(255, 255, 255, 0.15)',
-                    color: '#ffffff',
+                    backgroundColor: badgeBg,
+                    color: badgeColor,
                   }}>
-                    {callerIntel.spoofing_suspected
-                      ? 'POTENTIALLY SUSPICIOUS'
-                      : callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH'
-                      ? 'KNOWN REGISTRY MATCH (UNAUTHENTICATED)'
-                      : !callerIntel.is_valid
-                      ? 'INVALID NUMBER'
-                      : 'CALLER UNVERIFIED'}
+                    {badgeText}
                   </span>
                 </div>
+
+                {/* Reputation Score & Semantic Baseline */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Caller Risk Index:</span>
+                  <span style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: isConfirmedScam || isSuspicious
+                      ? 'rgba(239, 68, 68, 0.2)'
+                      : isRegistryMatch
+                      ? 'rgba(245, 158, 11, 0.2)'
+                      : 'rgba(16, 185, 129, 0.15)',
+                    color: isConfirmedScam || isSuspicious
+                      ? '#fca5a5'
+                      : isRegistryMatch
+                      ? '#fcd34d'
+                      : '#6ee7b7',
+                    border: `1px solid ${
+                      isConfirmedScam || isSuspicious
+                        ? 'var(--risk-high-border)'
+                        : isRegistryMatch
+                        ? 'rgba(245, 158, 11, 0.4)'
+                        : 'var(--risk-low-border)'
+                    }`
+                  }}>
+                    {typeof callerIntel.reputation_score === 'number' ? callerIntel.reputation_score.toFixed(1) : '30.0'} / 100
+                  </span>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    ({isConfirmedScam ? 'Cybercrime Advisory Record' : isSuspicious ? 'High Risk Spoof Conflict' : isRegistryMatch ? 'Institutional Directory Match' : isInvalidFormat ? 'Malformed Input' : 'Neutral Telecom Baseline (Unclassified)'})
+                  </span>
+                </div>
+
+                {/* Confirmed Scam Advisory Notice */}
+                {isConfirmedScam && (
+                  <div style={{
+                    padding: '8px 10px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.25)',
+                    border: '1.5px solid var(--risk-high)',
+                    borderRadius: 'var(--radius-sm)',
+                    marginBottom: '8px',
+                    fontSize: '0.82rem',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    lineHeight: 1.4,
+                  }}>
+                    🚨 <strong>CONFIRMED SCAM NUMBER:</strong> This number has been officially reported and verified in scam advisories. Do not answer or engage.
+                  </div>
+                )}
+
+                {/* Neutral Number Advisory Notice */}
+                {!isConfirmedScam && !isSuspicious && !isRegistryMatch && !isInvalidFormat && (
+                  <div style={{
+                    padding: '8px 10px',
+                    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+                    border: '1px solid rgba(148, 163, 184, 0.2)',
+                    borderRadius: 'var(--radius-sm)',
+                    marginBottom: '8px',
+                    fontSize: '0.78rem',
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.35,
+                  }}>
+                    ℹ️ <strong>Neutral Status:</strong> No registry match found. This caller is <em>not</em> flagged as spam or verified safe based solely on phone number. Live behavioral analysis will monitor the call dialogue for social engineering tactics.
+                  </div>
+                )}
 
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <span>📡 {callerIntel.carrier || 'National Carrier'}</span>
@@ -1591,7 +2132,8 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                   </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* Real-Time Risk Velocity Gauge Card */}

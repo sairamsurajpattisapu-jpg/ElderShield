@@ -237,7 +237,7 @@ class ElderShieldProtectionService : Service() {
                 } else {
                     val offlineMsg = "Protection paused: Server unreachable after $MAX_RETRY_ATTEMPTS attempts."
                     updateProtectionState(ProtectionState.DEGRADED, offlineMsg, retryAttempt)
-                    alertManager.triggerUrgentAlert(
+                    alertManager.triggerTechnicalAlert(
                         "PROTECTION OFFLINE",
                         "Cannot connect to security server. Tap ElderShield to retry."
                     )

@@ -11,7 +11,8 @@ from .models import (
     EvidenceItem,
     TurnEvaluation,
     BehavioralSignalsSummary,
-    RiskAssessment
+    RiskAssessment,
+    OtpRiskState
 )
 from .multilingual import (
     detect_language,
@@ -19,6 +20,10 @@ from .multilingual import (
     PATTERNS_URGENCY_INTIMIDATION,
     PATTERNS_SECRECY_ISOLATION,
     PATTERNS_CREDENTIAL_REQUEST,
+    PATTERNS_CREDENTIAL_REFUSAL,
+    PATTERNS_PAST_SCAM_DISCUSSION,
+    PATTERNS_PASSIVE_OTP_NOTICE,
+    OTP_INTERVENTION_MESSAGES,
     PATTERNS_FINANCIAL_TRANSFER,
     PATTERNS_REMOTE_ACCESS,
     PATTERNS_VERIFICATION_BYPASS,
@@ -69,7 +74,7 @@ class ConversationRiskEngine:
 
     def _is_senior_speaker(self, speaker: str) -> bool:
         spk = speaker.lower()
-        return any(term in spk for term in ["senior", "victim", "customer", "user", "elder"])
+        return any(term in spk for term in ["senior", "victim", "customer", "user", "elder", "me", "client", "citizen", "resident"])
 
     def _extract_turn_signals(
         self,
@@ -94,7 +99,32 @@ class ConversationRiskEngine:
         text = turn.text
         is_senior = self._is_senior_speaker(turn.speaker)
 
-        # 1. Legitimate Safeguard Check (invitation to branch or warning against sharing OTPs)
+        # Context analysis: check for explicit refusal, past scam discussion, and passive dispatch notice
+        is_refusal = any(re.search(pat, text, re.IGNORECASE) for pat in PATTERNS_CREDENTIAL_REFUSAL)
+        is_past_scam = any(re.search(pat, text, re.IGNORECASE) for pat in PATTERNS_PAST_SCAM_DISCUSSION)
+        is_passive_notice = any(re.search(pat, text, re.IGNORECASE) for pat in PATTERNS_PASSIVE_OTP_NOTICE)
+
+        # 1a. User Refusal Check: user firmly rejects sharing OTP/credentials
+        if is_refusal:
+            for pat in PATTERNS_CREDENTIAL_REFUSAL:
+                m = re.search(pat, text, re.IGNORECASE)
+                if m:
+                    quote = m.group(0)
+                    norm_quote = quote.lower().strip()
+                    if norm_quote not in seen_quotes:
+                        seen_quotes.add(norm_quote)
+                        signals_detected["legitimate_safeguard"].append(quote)
+                        evidence_items.append(EvidenceItem(
+                            turn_number=turn.turn_number,
+                            exact_quote=quote,
+                            signal_category="LEGITIMATE_SAFEGUARD",
+                            explanation="Explicit user refusal: speaker firmly rejects disclosing authentication secrets or verification codes.",
+                            severity="LOW",
+                            contribution="-35.0 (Active consumer defensive resistance)"
+                        ))
+                    break
+
+        # 1b. Legitimate Safeguard Check (invitation to branch or warning against sharing OTPs)
         for pat in PATTERNS_LEGITIMATE_SAFEGUARDS:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
@@ -113,8 +143,9 @@ class ConversationRiskEngine:
                     ))
                 break
 
-        # Threat actions are attributes of the Caller / external contact, not the senior victim
-        if not is_senior:
+        # Threat actions are attributes of the Caller / external contact, not the senior victim,
+        # nor do they apply to past scam recollections or user refusals.
+        if not is_senior and not is_refusal and not is_past_scam:
             # 2. Impersonation
             for subcat, patterns in PATTERNS_IMPERSONATION.items():
                 matched = False
@@ -136,8 +167,8 @@ class ConversationRiskEngine:
                             ))
                         matched = True
                         break
-                if matched:
-                    break
+                    if matched:
+                        break
 
             # 3. Urgency & Intimidation
             for pat in PATTERNS_URGENCY_INTIMIDATION:
@@ -177,8 +208,8 @@ class ConversationRiskEngine:
                         ))
                     break
 
-            # 5. Credential Requests (only if not a legitimate safeguard)
-            if not signals_detected["legitimate_safeguard"]:
+            # 5. Credential Requests (only if not a legitimate safeguard and not a passive notification)
+            if not signals_detected["legitimate_safeguard"] and not is_passive_notice:
                 for pat in PATTERNS_CREDENTIAL_REQUEST:
                     m = re.search(pat, text, re.IGNORECASE)
                     if m:
@@ -258,7 +289,7 @@ class ConversationRiskEngine:
 
     def analyze(
         self,
-        turns: List[ConversationTurn],
+        turns: Optional[List[ConversationTurn]] = None,
         raw_transcript: str = "",
         is_demo: bool = False,
         demo_id: Optional[str] = None
@@ -396,6 +427,16 @@ class ConversationRiskEngine:
             else:
                 turn_rationale = "Dialogue continues without new threat markers."
 
+            turn_is_otp_req = bool(signals["credentials"])
+            turn_otp_st = "MONITORING"
+            if active_credentials:
+                if (active_impersonation or active_urgency or active_secrecy or active_remote_access or active_transfer or active_bypass):
+                    turn_otp_st = "URGENT_INTERVENTION"
+                else:
+                    turn_otp_st = "OTP_RISK_DETECTED"
+            elif active_safeguard and not (active_credentials or active_transfer or active_remote_access):
+                turn_otp_st = "SAFE_OR_INCONCLUSIVE"
+
             turn_evaluations.append(TurnEvaluation(
                 turn_number=turn.turn_number,
                 speaker=turn.speaker,
@@ -404,7 +445,9 @@ class ConversationRiskEngine:
                 turn_risk_level=turn_risk,
                 newly_detected_signals=new_signals_this_turn,
                 turn_rationale=turn_rationale,
-                highlighted_spans=highlight_spans
+                highlighted_spans=highlight_spans,
+                otp_state=turn_otp_st,
+                is_otp_request=turn_is_otp_req
             ))
 
         signals_summary = BehavioralSignalsSummary(
@@ -525,6 +568,51 @@ class ConversationRiskEngine:
         # Recommended Action for elderly user
         recommended_action = self._determine_recommended_action(final_risk_level, signals_summary)
 
+        # Synthesize OTP Disclosure Risk State Machine
+        lang_key = "en"
+        if "Hindi" in lang_detected:
+            lang_key = "hi"
+        elif "Telugu" in lang_detected:
+            lang_key = "te"
+
+        interv_info = OTP_INTERVENTION_MESSAGES.get(lang_key, OTP_INTERVENTION_MESSAGES["en"])
+
+        otp_state: OtpRiskState = "MONITORING"
+        otp_disclosure_risk = False
+        urgent_intervention_required = False
+        intervention_heading = None
+        intervention_spoken_text = None
+        intervention_lang = lang_key
+
+        if active_credentials:
+            otp_disclosure_risk = True
+            # Coercive vectors: impersonation, urgency/intimidation, secrecy, remote access, transfer, bypass
+            if (active_impersonation or active_urgency or active_secrecy or active_remote_access or active_transfer or active_bypass):
+                otp_state = "URGENT_INTERVENTION"
+                urgent_intervention_required = True
+                intervention_heading = interv_info["heading"]
+                intervention_spoken_text = interv_info["spoken_text"]
+                final_risk_level = "HIGH_RISK"
+                final_risk_score = max(final_risk_score, 95.0)
+                final_decision = "BLOCK"
+                recommended_action = intervention_spoken_text
+            else:
+                otp_state = "OTP_RISK_DETECTED"
+                intervention_heading = interv_info["heading"]
+                intervention_spoken_text = interv_info["spoken_text"]
+                if final_risk_level != "HIGH_RISK":
+                    final_risk_level = "SUSPICIOUS"
+                final_risk_score = max(final_risk_score, 68.0)
+                if final_decision != "BLOCK":
+                    final_decision = "FLAG"
+                recommended_action = "Never disclose OTPs, banking PINs, or verification codes to callers."
+        elif active_safeguard and not (active_transfer or active_remote_access):
+            otp_state = "SAFE_OR_INCONCLUSIVE"
+        elif total_threat_signals == 0:
+            otp_state = "MONITORING"
+        else:
+            otp_state = "MONITORING"
+
         analysis_id = str(uuid.uuid4())[:8]
 
         return RiskAssessment(
@@ -546,7 +634,14 @@ class ConversationRiskEngine:
             unsupported_linguistic_cases=UNSUPPORTED_LINGUISTIC_CASES,
             raw_transcript=raw_transcript or "\n".join([f"{t.speaker}: {t.text}" for t in turns]),
             is_demo=is_demo,
-            demo_scenario_id=demo_id
+            demo_scenario_id=demo_id,
+            otp_state=otp_state,
+            otp_disclosure_risk=otp_disclosure_risk,
+            urgent_intervention_required=urgent_intervention_required,
+            intervention_heading=intervention_heading,
+            intervention_spoken_text=intervention_spoken_text,
+            intervention_language=intervention_lang,
+            event_id=str(uuid.uuid4())
         )
 
     def _determine_recommended_action(self, risk: RiskLevel, summary: BehavioralSignalsSummary) -> str:

@@ -42,10 +42,16 @@ class ElderAlertManager(private val context: Context) {
         // 2. Audio Tone Alert
         if (prefs.isSoundEnabled) {
             playWarningTone()
-            speakAlertMessage("Warning! Potential scam detected. Hang up the call now.")
+            val textToSpeak = if (message.isNotBlank()) message else "Warning! Potential scam detected."
+            speakAlertMessage(textToSpeak)
         }
 
         // 3. High-Priority Heads-Up Notification
+        sendAlertNotification(title, message)
+    }
+
+    fun triggerTechnicalAlert(title: String, message: String) {
+        // Technical/connection issues send a notification without sounding scam sirens or speaking scam alerts
         sendAlertNotification(title, message)
     }
 

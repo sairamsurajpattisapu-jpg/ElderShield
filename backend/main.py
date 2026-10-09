@@ -211,7 +211,13 @@ def analyze_conversation_progression(
         final_risk_score=assessment.risk_score,
         decision=assessment.decision,
         reasons=assessment.reasons,
-        analysis_method=assessment.analysis_method
+        analysis_method=assessment.analysis_method,
+        otp_state=assessment.otp_state,
+        urgent_intervention_required=assessment.urgent_intervention_required,
+        intervention_heading=assessment.intervention_heading,
+        intervention_spoken_text=assessment.intervention_spoken_text,
+        intervention_language=assessment.intervention_language,
+        event_id=assessment.event_id,
     )
 
 @app.post("/api/analyze/audio")
@@ -244,10 +250,12 @@ async def analyze_audio_upload(
 
     transcript_text = transcription.get("transcript", "").strip()
     if not transcript_text:
-        transcript_text = "Caller: Audio uploaded with inaudible speech or background noise."
+        transcript_text = ""
+        turns = []
+    else:
+        turns = parse_raw_transcript(transcript_text)
 
     # 2. Run detection engine on transcribed dialogue
-    turns = parse_raw_transcript(transcript_text)
     assessment = engine.analyze(turns=turns, raw_transcript=transcript_text)
 
     RECENT_ANALYSES.insert(0, assessment)
@@ -334,9 +342,9 @@ def unified_protection_analyze(
         raw_text = request.transcript.strip()
         turns = parse_raw_transcript(raw_text)
     else:
-        # Default placeholder turn if only phone number was provided
-        raw_text = "Caller connected for live call screening."
-        turns = [ConversationTurn(turn_number=1, speaker="System", text=raw_text)]
+        # No dialogue provided; maintain empty state without inventing turns
+        raw_text = ""
+        turns = []
 
     conv_assessment = engine.analyze(
         turns=turns,
@@ -354,8 +362,19 @@ def unified_protection_analyze(
     warning_title = None
     warning_message = None
 
-    # Check caller spoofing conflict multiplier
-    if caller_intel and caller_intel.spoofing_suspected:
+    # Check caller intelligence conflict multiplier
+    if caller_intel and caller_intel.caller_classification == "CONFIRMED_SCAM":
+        composite_score = min(100.0, max(composite_score, 95.0))
+        composite_risk = "HIGH_RISK"
+        decision = "BLOCK"
+        recommended_action = (
+            f"DISCONNECT IMMEDIATELY! Caller number {caller_intel.phone_number} is a CONFIRMED FRAUDULENT NUMBER "
+            f"listed in official cybercrime advisories. Do not engage or share any personal information."
+        )
+        alert_required = True
+        warning_title = "CONFIRMED SCAM CALLER"
+        warning_message = recommended_action
+    elif caller_intel and caller_intel.spoofing_suspected:
         # Institutional spoofing elevates risk
         composite_score = min(100.0, max(composite_score, 85.0))
         composite_risk = "HIGH_RISK"
@@ -367,6 +386,11 @@ def unified_protection_analyze(
         alert_required = True
         warning_title = "CRITICAL INSTITUTIONAL SPOOFING DETECTED"
         warning_message = recommended_action
+
+    elif conv_assessment.urgent_intervention_required:
+        alert_required = True
+        warning_title = conv_assessment.intervention_heading or "STOP! DO NOT SHARE YOUR OTP"
+        warning_message = conv_assessment.intervention_spoken_text or conv_assessment.recommended_action
 
     elif conv_assessment.risk_level == "HIGH_RISK":
         alert_required = True
@@ -391,7 +415,9 @@ def unified_protection_analyze(
         caller_intelligence=caller_intel,
         alert_required=alert_required,
         warning_title=warning_title,
-        warning_message=warning_message
+        warning_message=warning_message,
+        otp_state=conv_assessment.otp_state,
+        urgent_intervention_required=conv_assessment.urgent_intervention_required
     )
 
     RECENT_ANALYSES.insert(0, conv_assessment)
@@ -430,7 +456,7 @@ async def unified_protection_audio_upload(
         filename=file.filename or "call_audio.wav",
         language_hint=language_hint
     )
-    transcript_text = transcription.get("transcript", "").strip() or "Caller: Audio processed."
+    transcript_text = transcription.get("transcript", "").strip()
 
     # 2. Run unified protection
     req = UnifiedProtectionRequest(
@@ -547,10 +573,45 @@ async def live_call_websocket(
                         "reasons": assessment.reasons,
                         "is_final": True,
                         "timing": timing,
-                        "timestamp": time.time()
+                        "timestamp": time.time(),
+                        "otp_state": assessment.otp_state,
+                        "otp_disclosure_risk": assessment.otp_disclosure_risk,
+                        "urgent_intervention_required": assessment.urgent_intervention_required,
+                        "intervention_heading": assessment.intervention_heading,
+                        "intervention_spoken_text": assessment.intervention_spoken_text,
+                        "event_id": assessment.event_id
                     })
 
-                    if assessment.risk_level == "HIGH_RISK":
+                    if assessment.urgent_intervention_required:
+                        interv_fp = f"OTP_INTERV:{assessment.intervention_heading}:{':'.join(sorted([ev.exact_quote for ev in assessment.evidence[:3]]))}"
+                        if session.last_warning_fingerprint != interv_fp:
+                            session.last_warning_fingerprint = interv_fp
+                            await websocket.send_json({
+                                "type": "otp_intervention",
+                                "event_id": assessment.event_id or str(uuid.uuid4()),
+                                "session_id": session.session_id,
+                                "otp_state": assessment.otp_state,
+                                "heading": assessment.intervention_heading or "STOP! DO NOT SHARE YOUR OTP",
+                                "message": assessment.recommended_action,
+                                "spoken_text": assessment.intervention_spoken_text or assessment.recommended_action,
+                                "language": assessment.intervention_language or "en",
+                                "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:3]],
+                                "timing": timing,
+                                "timestamp": time.time()
+                            })
+                            await websocket.send_json({
+                                "type": "warning",
+                                "severity": "CRITICAL",
+                                "title": assessment.intervention_heading or "STOP! DO NOT SHARE YOUR OTP",
+                                "message": assessment.recommended_action,
+                                "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
+                                "timing": timing,
+                                "timestamp": time.time(),
+                                "event_id": assessment.event_id,
+                                "otp_state": assessment.otp_state,
+                                "spoken_text": assessment.intervention_spoken_text
+                            })
+                    elif assessment.risk_level == "HIGH_RISK":
                         warning_fp = f"HIGH_RISK:{':'.join(sorted([ev.exact_quote for ev in assessment.evidence[:3]]))}"
                         if session.last_warning_fingerprint != warning_fp:
                             session.last_warning_fingerprint = warning_fp
@@ -561,7 +622,9 @@ async def live_call_websocket(
                                 "message": assessment.recommended_action,
                                 "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
                                 "timing": timing,
-                                "timestamp": time.time()
+                                "timestamp": time.time(),
+                                "event_id": assessment.event_id,
+                                "otp_state": assessment.otp_state
                             })
 
             elif msg_type == "transcript_segment":
@@ -596,11 +659,45 @@ async def live_call_websocket(
                         "reasons": assessment.reasons,
                         "is_final": is_final,
                         "timing": timing,
-                        "timestamp": time.time()
+                        "timestamp": time.time(),
+                        "otp_state": assessment.otp_state,
+                        "otp_disclosure_risk": assessment.otp_disclosure_risk,
+                        "urgent_intervention_required": assessment.urgent_intervention_required,
+                        "intervention_heading": assessment.intervention_heading,
+                        "intervention_spoken_text": assessment.intervention_spoken_text,
+                        "event_id": assessment.event_id
                     })
 
-                    # If HIGH RISK detected, deliver immediate prominent warning
-                    if assessment.risk_level == "HIGH_RISK":
+                    if assessment.urgent_intervention_required:
+                        interv_fp = f"OTP_INTERV:{assessment.intervention_heading}:{':'.join(sorted([ev.exact_quote for ev in assessment.evidence[:3]]))}"
+                        if session.last_warning_fingerprint != interv_fp:
+                            session.last_warning_fingerprint = interv_fp
+                            await websocket.send_json({
+                                "type": "otp_intervention",
+                                "event_id": assessment.event_id or str(uuid.uuid4()),
+                                "session_id": session.session_id,
+                                "otp_state": assessment.otp_state,
+                                "heading": assessment.intervention_heading or "STOP! DO NOT SHARE YOUR OTP",
+                                "message": assessment.recommended_action,
+                                "spoken_text": assessment.intervention_spoken_text or assessment.recommended_action,
+                                "language": assessment.intervention_language or "en",
+                                "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:3]],
+                                "timing": timing,
+                                "timestamp": time.time()
+                            })
+                            await websocket.send_json({
+                                "type": "warning",
+                                "severity": "CRITICAL",
+                                "title": assessment.intervention_heading or "STOP! DO NOT SHARE YOUR OTP",
+                                "message": assessment.recommended_action,
+                                "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
+                                "timing": timing,
+                                "timestamp": time.time(),
+                                "event_id": assessment.event_id,
+                                "otp_state": assessment.otp_state,
+                                "spoken_text": assessment.intervention_spoken_text
+                            })
+                    elif assessment.risk_level == "HIGH_RISK":
                         warning_fp = f"HIGH_RISK:{':'.join(sorted([ev.exact_quote for ev in assessment.evidence[:3]]))}"
                         if session.last_warning_fingerprint != warning_fp:
                             session.last_warning_fingerprint = warning_fp
@@ -611,7 +708,9 @@ async def live_call_websocket(
                                 "message": assessment.recommended_action,
                                 "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
                                 "timing": timing,
-                                "timestamp": time.time()
+                                "timestamp": time.time(),
+                                "event_id": assessment.event_id,
+                                "otp_state": assessment.otp_state
                             })
 
             elif msg_type == "caller_info":
