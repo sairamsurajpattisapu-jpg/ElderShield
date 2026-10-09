@@ -69,17 +69,48 @@ html, body {
   line-height: 1.5;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 button {
   font-family: inherit;
   font-size: inherit;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 textarea, input {
   font-family: inherit;
   font-size: inherit;
+}
+
+/* Mobile responsive optimizations (360px, 390px, 768px) */
+@media (max-width: 640px) {
+  :root {
+    --font-base: 15px;
+  }
+
+  main {
+    padding: 16px 12px !important;
+  }
+
+  header {
+    padding: 12px 14px !important;
+  }
+
+  button {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 390px) {
+  :root {
+    --font-base: 14.5px;
+  }
+
+  main {
+    padding: 12px 8px !important;
+  }
 }
 
 /* Scrollbars */

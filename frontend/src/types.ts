@@ -1,12 +1,14 @@
-export type RiskLevel = 'LOW RISK' | 'SUSPICIOUS' | 'HIGH RISK' | 'INSUFFICIENT EVIDENCE';
+export type RiskLevel = 'LOW_RISK' | 'SUSPICIOUS' | 'HIGH_RISK' | 'INSUFFICIENT_EVIDENCE';
+export type DecisionType = 'ALLOW' | 'WARN' | 'BLOCK' | 'INCONCLUSIVE';
 
-export type BehaviorCategory =
+export type SignalCategory =
   | 'IMPERSONATION'
   | 'URGENCY_INTIMIDATION'
   | 'SECRECY_ISOLATION'
-  | 'CREDENTIAL_SOLICITATION'
-  | 'FINANCIAL_COERCION'
-  | 'REMOTE_ACCESS_MALWARE'
+  | 'CREDENTIAL_REQUEST'
+  | 'FINANCIAL_TRANSFER'
+  | 'REMOTE_ACCESS'
+  | 'VERIFICATION_BYPASS'
   | 'LEGITIMATE_SAFEGUARD'
   | 'NEUTRAL_INQUIRY';
 
@@ -16,57 +18,70 @@ export interface ConversationTurn {
   text: string;
 }
 
-export interface EvidenceFinding {
+export interface EvidenceItem {
   turn_number: number;
-  speaker: string;
-  behavior_category: BehaviorCategory;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   exact_quote: string;
+  signal_category: SignalCategory;
   explanation: string;
-  why_it_matters: string;
-  recommended_action: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  contribution: string;
 }
 
-export interface TurnProgression {
+export interface TurnEvaluation {
   turn_number: number;
   speaker: string;
   text: string;
   cumulative_risk_score: number;
   turn_risk_level: RiskLevel;
-  newly_detected_behaviors: string[];
+  newly_detected_signals: string[];
   turn_rationale: string;
+  highlighted_spans?: string[];
 }
 
-export interface BehaviorMatrix {
+export interface BehavioralSignalsSummary {
   impersonation: boolean;
-  urgency_intimidation: boolean;
-  secrecy_isolation: boolean;
-  credential_solicitation: boolean;
-  financial_coercion: boolean;
-  remote_access_malware: boolean;
+  urgency_and_threats: boolean;
+  requests_for_secrecy: boolean;
+  credential_requests: boolean;
+  financial_transfer_requests: boolean;
+  remote_access_requests: boolean;
+  verification_bypass_attempts: boolean;
   legitimate_safeguards_present: boolean;
 }
 
-export interface AnalysisResult {
+export interface RiskAssessment {
   id: string;
   timestamp: string;
-  overall_risk_level: RiskLevel;
-  overall_risk_score: number;
+  risk_level: RiskLevel;
+  risk_score: number;
+  decision: DecisionType;
+  evidence: EvidenceItem[];
+  reasons: string[];
+  recommended_action: string;
+  insufficient_evidence: boolean;
+  analysis_method: string;
   score_semantics: string;
   confidence_level: 'HIGH' | 'MEDIUM' | 'LOW';
   language_detected: string;
-  summary: string;
-  primary_threat_vector?: string | null;
-  behavior_matrix: BehaviorMatrix;
-  turn_progression: TurnProgression[];
-  evidence_findings: EvidenceFinding[];
-  protection_recommendations: string[];
-  raw_transcript: string;
+  signals_summary: BehavioralSignalsSummary;
+  turn_progression: TurnEvaluation[];
+  unsupported_linguistic_cases?: string[];
+  raw_transcript?: string;
   is_demo: boolean;
   demo_scenario_id?: string | null;
 }
 
-export interface ScenarioMetadata {
+export interface ProgressionResponse {
+  id: string;
+  turns: TurnEvaluation[];
+  final_risk_level: RiskLevel;
+  final_risk_score: number;
+  decision: DecisionType;
+  reasons: string[];
+  analysis_method: string;
+}
+
+export interface DemoScenario {
   id: string;
   title: string;
   expected_classification: RiskLevel;
@@ -75,4 +90,12 @@ export interface ScenarioMetadata {
   language: string;
   description: string;
   turns: ConversationTurn[];
+  raw_transcript: string;
+}
+
+export interface UserPreferences {
+  fontSize: 'normal' | 'large' | 'xlarge';
+  highContrast: boolean;
+  soundAlerts: boolean;
+  saveHistoryLocally: boolean;
 }

@@ -1,35 +1,41 @@
 import re
 import uuid
 from datetime import datetime
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any, Optional, Set
 
 from .models import (
     RiskLevel,
-    BehaviorCategory,
+    DecisionType,
+    SignalCategory,
     ConversationTurn,
-    EvidenceFinding,
-    TurnProgression,
-    BehaviorMatrix,
-    AnalysisResult
+    EvidenceItem,
+    TurnEvaluation,
+    BehavioralSignalsSummary,
+    RiskAssessment
 )
 from .multilingual import (
     detect_language,
     PATTERNS_IMPERSONATION,
     PATTERNS_URGENCY_INTIMIDATION,
     PATTERNS_SECRECY_ISOLATION,
-    PATTERNS_CREDENTIAL_SOLICITATION,
-    PATTERNS_FINANCIAL_COERCION,
-    PATTERNS_REMOTE_ACCESS_MALWARE,
-    PATTERNS_LEGITIMATE_SAFEGUARDS
+    PATTERNS_CREDENTIAL_REQUEST,
+    PATTERNS_FINANCIAL_TRANSFER,
+    PATTERNS_REMOTE_ACCESS,
+    PATTERNS_VERIFICATION_BYPASS,
+    PATTERNS_LEGITIMATE_SAFEGUARDS,
+    UNSUPPORTED_LINGUISTIC_CASES
 )
 
 def parse_raw_transcript(transcript: str) -> List[ConversationTurn]:
-    """Parses a raw text transcript into structured turns."""
+    """Parses raw text transcripts into structured turns with speaker identification."""
     lines = [line.strip() for line in transcript.strip().splitlines() if line.strip()]
     turns: List[ConversationTurn] = []
     
     turn_counter = 1
-    speaker_regex = re.compile(r"^(Caller|Senior|Bank\s+Official|Official|Victim|Agent|Customer|Person\s+[A-Z0-9]+|User|Manager|Police|Operator|Unknown)[\s*:\-\]]+(.*)$", re.IGNORECASE)
+    speaker_regex = re.compile(
+        r"^(Caller|Senior|Bank\s+Official|Official|Victim|Agent|Customer|Person\s+[A-Z0-9]+|User|Manager|Police|Operator|Unknown)[\s*:\-\]]+(.*)$",
+        re.IGNORECASE
+    )
     
     for line in lines:
         match = speaker_regex.match(line)
@@ -51,226 +57,282 @@ def parse_raw_transcript(transcript: str) -> List[ConversationTurn]:
                 
     return turns
 
-class ScamDetectionEngine:
+class ConversationRiskEngine:
+    """
+    Modular, deterministic rule-based scam detection engine.
+    Evaluates multi-vector behavioral combinations across English, Hindi, and Telugu.
+    """
+    ANALYSIS_METHOD = "rule-based-behavioral-v1"
+
     def __init__(self):
         pass
 
     def _is_senior_speaker(self, speaker: str) -> bool:
         spk = speaker.lower()
-        return "senior" in spk or "victim" in spk or "customer" in spk or "user" in spk
+        return any(term in spk for term in ["senior", "victim", "customer", "user", "elder"])
 
-    def _extract_turn_markers(self, turn: ConversationTurn) -> Tuple[Dict[str, List[str]], List[EvidenceFinding]]:
-        """Analyzes a single turn and extracts behavioral markers and evidence findings."""
-        findings: List[EvidenceFinding] = []
-        behaviors_detected: Dict[str, List[str]] = {
+    def _extract_turn_signals(
+        self,
+        turn: ConversationTurn,
+        seen_quotes: Set[str]
+    ) -> Tuple[Dict[str, List[str]], List[EvidenceItem]]:
+        """
+        Extracts behavioral signals from a single turn, preventing duplicate evidence.
+        """
+        evidence_items: List[EvidenceItem] = []
+        signals_detected: Dict[str, List[str]] = {
             "impersonation": [],
             "urgency": [],
             "secrecy": [],
             "credentials": [],
-            "coercion": [],
+            "transfer": [],
             "remote_access": [],
+            "verification_bypass": [],
             "legitimate_safeguard": []
         }
         
         text = turn.text
         is_senior = self._is_senior_speaker(turn.speaker)
 
-        # First check legitimate safeguards (can come from caller or senior)
+        # 1. Legitimate Safeguard Check (invitation to branch or warning against sharing OTPs)
         for pat in PATTERNS_LEGITIMATE_SAFEGUARDS:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 quote = m.group(0)
-                behaviors_detected["legitimate_safeguard"].append(quote)
-                findings.append(EvidenceFinding(
-                    turn_number=turn.turn_number,
-                    speaker=turn.speaker,
-                    behavior_category="LEGITIMATE_SAFEGUARD",
-                    severity="LOW",
-                    exact_quote=quote,
-                    explanation="Explicit institutional safeguard detected (advising physical branch visit or explicitly warning NEVER to disclose OTPs/PINs).",
-                    why_it_matters="Legitimate banking and government protocol strictly adheres to customer security by discouraging remote credential sharing.",
-                    recommended_action="Safe to verify at your local branch during regular banking hours at your convenience."
-                ))
+                norm_quote = quote.lower().strip()
+                if norm_quote not in seen_quotes:
+                    seen_quotes.add(norm_quote)
+                    signals_detected["legitimate_safeguard"].append(quote)
+                    evidence_items.append(EvidenceItem(
+                        turn_number=turn.turn_number,
+                        exact_quote=quote,
+                        signal_category="LEGITIMATE_SAFEGUARD",
+                        explanation="Explicit institutional safeguard: caller urges physical branch visit or warns customer NEVER to disclose OTPs.",
+                        severity="LOW",
+                        contribution="-40.0 (Suppresses suspicion and validates institutional safety protocol)"
+                    ))
                 break
 
-        # Threat behaviors should only be attributed to the Caller/External party, not the Senior responding
+        # Threat actions are attributes of the Caller / external contact, not the senior victim
         if not is_senior:
-            # 1. Impersonation checks
+            # 2. Impersonation
             for subcat, patterns in PATTERNS_IMPERSONATION.items():
+                matched = False
                 for pat in patterns:
                     m = re.search(pat, text, re.IGNORECASE)
                     if m:
                         quote = m.group(0)
-                        behaviors_detected["impersonation"].append(subcat)
-                        findings.append(EvidenceFinding(
-                            turn_number=turn.turn_number,
-                            speaker=turn.speaker,
-                            behavior_category="IMPERSONATION",
-                            severity="MEDIUM" if subcat == "UTILITY_TELECOM" else "HIGH",
-                            exact_quote=quote,
-                            explanation=f"Caller asserts official institutional identity ({subcat.replace('_', ' ').title()}). Scammers exploit authority to bypass natural skepticism.",
-                            why_it_matters="Elderly citizens naturally respect banks, electricity officials, and police, making impersonation the primary manipulation hook.",
-                            recommended_action="Do not accept incoming caller claims. Terminate the call and verify through an official publicly published contact number."
-                        ))
+                        norm_quote = quote.lower().strip()
+                        if norm_quote not in seen_quotes:
+                            seen_quotes.add(norm_quote)
+                            signals_detected["impersonation"].append(subcat)
+                            evidence_items.append(EvidenceItem(
+                                turn_number=turn.turn_number,
+                                exact_quote=quote,
+                                signal_category="IMPERSONATION",
+                                explanation=f"Caller asserts authority or institution identity ({subcat.replace('_', ' ').title()}). Impersonation creates false trust or fear.",
+                                severity="MEDIUM" if subcat == "UTILITY_TELECOM" else "HIGH",
+                                contribution="+25.0 (Initial baseline hook)"
+                            ))
+                        matched = True
                         break
+                if matched:
+                    break
 
-            # 2. Urgency and Intimidation
+            # 3. Urgency & Intimidation
             for pat in PATTERNS_URGENCY_INTIMIDATION:
                 m = re.search(pat, text, re.IGNORECASE)
                 if m:
                     quote = m.group(0)
-                    behaviors_detected["urgency"].append(quote)
-                    findings.append(EvidenceFinding(
-                        turn_number=turn.turn_number,
-                        speaker=turn.speaker,
-                        behavior_category="URGENCY_INTIMIDATION",
-                        severity="HIGH",
-                        exact_quote=quote,
-                        explanation="Artificial deadline or threat of imminent punitive action (power cutoff, arrest, or immediate financial penalty).",
-                        why_it_matters="Manufactured panic induces cognitive tunnel vision, preventing the senior from contacting their children or advisors.",
-                        recommended_action="Take a deliberate pause. Legitimate legal and utility procedures provide advance postal notices, never 10-minute ultimatums."
-                    ))
+                    norm_quote = quote.lower().strip()
+                    if norm_quote not in seen_quotes:
+                        seen_quotes.add(norm_quote)
+                        signals_detected["urgency"].append(quote)
+                        evidence_items.append(EvidenceItem(
+                            turn_number=turn.turn_number,
+                            exact_quote=quote,
+                            signal_category="URGENCY_INTIMIDATION",
+                            explanation="Artificial deadline or threat of punitive action (power cutoff, account freeze, or arrest warrant).",
+                            severity="HIGH",
+                            contribution="+25.0 (Creates cognitive tunnel vision)"
+                        ))
                     break
 
-            # 3. Secrecy and Isolation
+            # 4. Secrecy & Isolation
             for pat in PATTERNS_SECRECY_ISOLATION:
                 m = re.search(pat, text, re.IGNORECASE)
                 if m:
                     quote = m.group(0)
-                    behaviors_detected["secrecy"].append(quote)
-                    findings.append(EvidenceFinding(
-                        turn_number=turn.turn_number,
-                        speaker=turn.speaker,
-                        behavior_category="SECRECY_ISOLATION",
-                        severity="CRITICAL",
-                        exact_quote=quote,
-                        explanation="Mandate to keep conversation secret, avoid family contact, or remain isolated on the phone call.",
-                        why_it_matters="Isolation is the primary tactic used to prevent tech-savvy family members or neighbors from intervening.",
-                        recommended_action="Hang up immediately and inform your children, family members, or a trusted neighbor."
-                    ))
+                    norm_quote = quote.lower().strip()
+                    if norm_quote not in seen_quotes:
+                        seen_quotes.add(norm_quote)
+                        signals_detected["secrecy"].append(quote)
+                        evidence_items.append(EvidenceItem(
+                            turn_number=turn.turn_number,
+                            exact_quote=quote,
+                            signal_category="SECRECY_ISOLATION",
+                            explanation="Active demand to keep conversation secret or isolate senior from family/advisors.",
+                            severity="CRITICAL",
+                            contribution="+30.0 (High-risk isolation tactic)"
+                        ))
                     break
 
-            # 4. Credential Solicitation (only if NOT preceded by 'never share' or 'bank never asks')
-            if not behaviors_detected["legitimate_safeguard"]:
-                for pat in PATTERNS_CREDENTIAL_SOLICITATION:
+            # 5. Credential Requests (only if not a legitimate safeguard)
+            if not signals_detected["legitimate_safeguard"]:
+                for pat in PATTERNS_CREDENTIAL_REQUEST:
                     m = re.search(pat, text, re.IGNORECASE)
                     if m:
                         quote = m.group(0)
-                        behaviors_detected["credentials"].append(quote)
-                        findings.append(EvidenceFinding(
-                            turn_number=turn.turn_number,
-                            speaker=turn.speaker,
-                            behavior_category="CREDENTIAL_SOLICITATION",
-                            severity="CRITICAL",
-                            exact_quote=quote,
-                            explanation="Direct solicitation of confidential credentials (OTP, PIN, or verification code).",
-                            why_it_matters="RBI guidelines mandate that banks never solicit OTPs or PINs. Sharing this code enables instant irreversible fraud.",
-                            recommended_action="NEVER share OTP, PIN, or CVV. No bank official, police officer, or utility provider has legitimate access to your OTP."
-                        ))
+                        norm_quote = quote.lower().strip()
+                        if norm_quote not in seen_quotes:
+                            seen_quotes.add(norm_quote)
+                            signals_detected["credentials"].append(quote)
+                            evidence_items.append(EvidenceItem(
+                                turn_number=turn.turn_number,
+                                exact_quote=quote,
+                                signal_category="CREDENTIAL_REQUEST",
+                                explanation="Direct solicitation of OTP, UPI PIN, ATM PIN, or banking password over the call.",
+                                severity="CRITICAL",
+                                contribution="+40.0 (Direct credential harvesting)"
+                            ))
                         break
 
-            # 5. Financial Coercion / Transfers
-            for pat in PATTERNS_FINANCIAL_COERCION:
+            # 6. Financial Transfers
+            for pat in PATTERNS_FINANCIAL_TRANSFER:
                 m = re.search(pat, text, re.IGNORECASE)
                 if m:
                     quote = m.group(0)
-                    behaviors_detected["coercion"].append(quote)
-                    findings.append(EvidenceFinding(
-                        turn_number=turn.turn_number,
-                        speaker=turn.speaker,
-                        behavior_category="FINANCIAL_COERCION",
-                        severity="CRITICAL",
-                        exact_quote=quote,
-                        explanation="Demand to make immediate payments via UPI/QR code or transfer savings to an alleged 'safety/RBI account'.",
-                        why_it_matters="Neither the RBI nor police operate 'safety accounts' where citizens deposit money for clearance.",
-                        recommended_action="Stop all financial transfers immediately. If any debit occurred, immediately report to Cyber Helpline 1930."
-                    ))
+                    norm_quote = quote.lower().strip()
+                    if norm_quote not in seen_quotes:
+                        seen_quotes.add(norm_quote)
+                        signals_detected["transfer"].append(quote)
+                        evidence_items.append(EvidenceItem(
+                            turn_number=turn.turn_number,
+                            exact_quote=quote,
+                            signal_category="FINANCIAL_TRANSFER",
+                            explanation="Demand to make immediate payments via UPI/QR or transfer savings to alleged 'RBI safety account'.",
+                            severity="CRITICAL",
+                            contribution="+40.0 (Direct financial extraction)"
+                        ))
                     break
 
-            # 6. Remote Access Malware
-            for pat in PATTERNS_REMOTE_ACCESS_MALWARE:
+            # 7. Remote Access Software
+            for pat in PATTERNS_REMOTE_ACCESS:
                 m = re.search(pat, text, re.IGNORECASE)
                 if m:
                     quote = m.group(0)
-                    behaviors_detected["remote_access"].append(quote)
-                    findings.append(EvidenceFinding(
-                        turn_number=turn.turn_number,
-                        speaker=turn.speaker,
-                        behavior_category="REMOTE_ACCESS_MALWARE",
-                        severity="CRITICAL",
-                        exact_quote=quote,
-                        explanation="Instruction to install screen-sharing software (QuickSupport, AnyDesk) or download untrusted APK files.",
-                        why_it_matters="Screen-sharing software grants criminals complete visibility and remote takeover of mobile banking apps and OTPs.",
-                        recommended_action="Do not download or install any applications requested over a phone call. Disconnect now."
-                    ))
+                    norm_quote = quote.lower().strip()
+                    if norm_quote not in seen_quotes:
+                        seen_quotes.add(norm_quote)
+                        signals_detected["remote_access"].append(quote)
+                        evidence_items.append(EvidenceItem(
+                            turn_number=turn.turn_number,
+                            exact_quote=quote,
+                            signal_category="REMOTE_ACCESS",
+                            explanation="Request to download screen-sharing tools (QuickSupport, AnyDesk) or install APK files.",
+                            severity="CRITICAL",
+                            contribution="+35.0 (Remote device takeover)"
+                        ))
                     break
 
-        return behaviors_detected, findings
+            # 8. Verification Bypass
+            for pat in PATTERNS_VERIFICATION_BYPASS:
+                m = re.search(pat, text, re.IGNORECASE)
+                if m:
+                    quote = m.group(0)
+                    norm_quote = quote.lower().strip()
+                    if norm_quote not in seen_quotes:
+                        seen_quotes.add(norm_quote)
+                        signals_detected["verification_bypass"].append(quote)
+                        evidence_items.append(EvidenceItem(
+                            turn_number=turn.turn_number,
+                            exact_quote=quote,
+                            signal_category="VERIFICATION_BYPASS",
+                            explanation="Attempt to discourage visiting bank branch or consulting official customer care.",
+                            severity="HIGH",
+                            contribution="+20.0 (Bypasses authentic validation)"
+                        ))
+                    break
 
-    def analyze(self, turns: List[ConversationTurn], raw_transcript: str = "", is_demo: bool = False, demo_id: Optional[str] = None) -> AnalysisResult:
+        return signals_detected, evidence_items
+
+    def analyze(
+        self,
+        turns: List[ConversationTurn],
+        raw_transcript: str = "",
+        is_demo: bool = False,
+        demo_id: Optional[str] = None
+    ) -> RiskAssessment:
+        """
+        Executes progressive risk assessment across all conversation turns.
+        """
         if not turns:
             turns = parse_raw_transcript(raw_transcript)
 
         full_text = " ".join([t.text for t in turns])
         lang_detected = detect_language(full_text)
-        
-        all_findings: List[EvidenceFinding] = []
-        turn_progressions: List[TurnProgression] = []
-        
-        # Cumulative state tracking
+
+        all_evidence: List[EvidenceItem] = []
+        turn_evaluations: List[TurnEvaluation] = []
+        seen_quotes: Set[str] = set()
+
+        # Cumulative state across turns
         active_impersonation = False
         active_urgency = False
         active_secrecy = False
         active_credentials = False
-        active_coercion = False
+        active_transfer = False
         active_remote_access = False
+        active_bypass = False
         active_safeguard = False
-        
+
         current_score = 0.0
-        
+
         for turn in turns:
-            markers, turn_findings = self._extract_turn_markers(turn)
-            all_findings.extend(turn_findings)
-            
-            new_behaviors_this_turn = []
-            
-            if markers["impersonation"]:
-                if not active_impersonation:
-                    new_behaviors_this_turn.append("Impersonation Claim")
+            signals, turn_evidence = self._extract_turn_signals(turn, seen_quotes)
+            all_evidence.extend(turn_evidence)
+
+            new_signals_this_turn = []
+            highlight_spans = []
+
+            if signals["impersonation"] and not active_impersonation:
+                new_signals_this_turn.append("Impersonation Claim")
                 active_impersonation = True
-                
-            if markers["urgency"]:
-                if not active_urgency:
-                    new_behaviors_this_turn.append("Urgency & Pressure")
+
+            if signals["urgency"] and not active_urgency:
+                new_signals_this_turn.append("Urgency & Intimidation")
                 active_urgency = True
-                
-            if markers["secrecy"]:
-                if not active_secrecy:
-                    new_behaviors_this_turn.append("Secrecy / Isolation Mandate")
+
+            if signals["secrecy"] and not active_secrecy:
+                new_signals_this_turn.append("Secrecy / Isolation Mandate")
                 active_secrecy = True
-                
-            if markers["credentials"]:
-                if not active_credentials:
-                    new_behaviors_this_turn.append("Credential Solicitation (OTP/PIN)")
+
+            if signals["credentials"] and not active_credentials:
+                new_signals_this_turn.append("Credential Solicitation (OTP/PIN)")
                 active_credentials = True
-                
-            if markers["coercion"]:
-                if not active_coercion:
-                    new_behaviors_this_turn.append("Coercive Money Transfer / QR Request")
-                active_coercion = True
-                
-            if markers["remote_access"]:
-                if not active_remote_access:
-                    new_behaviors_this_turn.append("Remote Access App / APK Request")
+
+            if signals["transfer"] and not active_transfer:
+                new_signals_this_turn.append("Coercive Financial Transfer Request")
+                active_transfer = True
+
+            if signals["remote_access"] and not active_remote_access:
+                new_signals_this_turn.append("Remote Access Software / APK Request")
                 active_remote_access = True
-                
-            if markers["legitimate_safeguard"]:
+
+            if signals["verification_bypass"] and not active_bypass:
+                new_signals_this_turn.append("Verification Bypass Attempt")
+                active_bypass = True
+
+            if signals["legitimate_safeguard"]:
                 active_safeguard = True
-                new_behaviors_this_turn.append("Official Protective Safeguard")
+                new_signals_this_turn.append("Official Safeguard (In-Person Branch Invitation)")
+
+            for ev in turn_evidence:
+                highlight_spans.append(ev.exact_quote)
 
             # Progressive score calculation
-            if active_safeguard and not (active_credentials or active_coercion or active_remote_access):
-                # Safeguards hold risk strictly low
+            if active_safeguard and not (active_credentials or active_transfer or active_remote_access):
+                # Safeguards hold risk low
                 current_score = min(12.0, max(current_score * 0.4, 5.0))
             else:
                 base = 0.0
@@ -280,183 +342,242 @@ class ScamDetectionEngine:
                     base += 24.0
                 if active_secrecy:
                     base += 26.0
+                if active_bypass:
+                    base += 20.0
                 if active_remote_access:
                     base += 32.0
                 if active_credentials:
                     base += 38.0
-                if active_coercion:
+                if active_transfer:
                     base += 38.0
-                    
-                # Combinatorial amplification for toxic multi-vector scams
-                if active_impersonation and active_urgency and (active_credentials or active_coercion or active_remote_access):
+
+                # Compounding multi-vector amplification:
+                # If Impersonation + Urgency/Secrecy + Credential/Transfer/Remote Access
+                if active_impersonation and (active_urgency or active_secrecy) and (active_credentials or active_transfer or active_remote_access):
                     base = max(base, 94.0)
-                elif active_impersonation and (active_credentials or active_remote_access or active_coercion):
+                elif active_impersonation and (active_credentials or active_remote_access or active_transfer):
                     base = max(base, 85.0)
-                elif (active_urgency or active_secrecy) and (active_credentials or active_coercion or active_remote_access):
+                elif (active_urgency or active_secrecy) and (active_credentials or active_transfer or active_remote_access):
                     base = max(base, 88.0)
-                    
+
                 current_score = min(98.5, max(current_score, base))
-                
-            # Classify turn risk level
+
+            # Turn-level risk classification
             turn_risk: RiskLevel
-            if (not active_impersonation and not active_urgency and not active_secrecy and 
-                not active_credentials and not active_coercion and not active_remote_access and 
-                not active_safeguard):
-                turn_risk = "INSUFFICIENT EVIDENCE"
-            elif active_safeguard and not (active_credentials or active_coercion or active_remote_access):
-                turn_risk = "LOW RISK"
+            total_active_threat_signals = (
+                int(active_impersonation) +
+                int(active_urgency) +
+                int(active_secrecy) +
+                int(active_credentials) +
+                int(active_transfer) +
+                int(active_remote_access) +
+                int(active_bypass)
+            )
+
+            if total_active_threat_signals == 0 and not active_safeguard:
+                turn_risk = "INSUFFICIENT_EVIDENCE"
+            elif active_safeguard and not (active_credentials or active_transfer or active_remote_access):
+                turn_risk = "LOW_RISK"
             elif current_score >= 61.0:
-                turn_risk = "HIGH RISK"
+                turn_risk = "HIGH_RISK"
             elif current_score >= 26.0:
                 turn_risk = "SUSPICIOUS"
             else:
-                turn_risk = "LOW RISK"
-                
-            if new_behaviors_this_turn:
-                turn_rationale = f"Detected: {', '.join(new_behaviors_this_turn)}."
+                turn_risk = "LOW_RISK"
+
+            if new_signals_this_turn:
+                turn_rationale = f"Detected: {', '.join(new_signals_this_turn)}."
             elif active_safeguard:
                 turn_rationale = "Legitimate institution safeguard maintains low risk."
             elif current_score > 60:
                 turn_rationale = "High scam momentum continues from previous coercive tactics."
-            elif turn_risk == "INSUFFICIENT EVIDENCE":
+            elif turn_risk == "INSUFFICIENT_EVIDENCE":
                 turn_rationale = "Ambiguous dialogue with no distinguishable scam or safety markers."
             else:
                 turn_rationale = "Dialogue continues without new threat markers."
 
-            turn_progressions.append(TurnProgression(
+            turn_evaluations.append(TurnEvaluation(
                 turn_number=turn.turn_number,
                 speaker=turn.speaker,
                 text=turn.text,
                 cumulative_risk_score=round(current_score, 1),
                 turn_risk_level=turn_risk,
-                newly_detected_behaviors=new_behaviors_this_turn,
-                turn_rationale=turn_rationale
+                newly_detected_signals=new_signals_this_turn,
+                turn_rationale=turn_rationale,
+                highlighted_spans=highlight_spans
             ))
 
-        behavior_matrix = BehaviorMatrix(
+        signals_summary = BehavioralSignalsSummary(
             impersonation=active_impersonation,
-            urgency_intimidation=active_urgency,
-            secrecy_isolation=active_secrecy,
-            credential_solicitation=active_credentials,
-            financial_coercion=active_coercion,
-            remote_access_malware=active_remote_access,
+            urgency_and_threats=active_urgency,
+            requests_for_secrecy=active_secrecy,
+            credential_requests=active_credentials,
+            financial_transfer_requests=active_transfer,
+            remote_access_requests=active_remote_access,
+            verification_bypass_attempts=active_bypass,
             legitimate_safeguards_present=active_safeguard
         )
 
-        total_suspicious_flags = (
+        total_threat_signals = (
             int(active_impersonation) +
             int(active_urgency) +
             int(active_secrecy) +
             int(active_credentials) +
-            int(active_coercion) +
-            int(active_remote_access)
+            int(active_transfer) +
+            int(active_remote_access) +
+            int(active_bypass)
         )
-        
+
         final_risk_level: RiskLevel
-        final_score: float = current_score
+        final_risk_score: float = current_score
+        final_decision: DecisionType
+        insufficient_ev: bool = False
         confidence: str = "HIGH"
         score_semantics: str
-        
-        # Check explicit classification conditions
-        if total_suspicious_flags == 0 and not active_safeguard:
-            final_risk_level = "INSUFFICIENT EVIDENCE"
-            final_score = 15.0
-            confidence = "LOW"
-            score_semantics = "Indeterminate Context (Score 15/100). The conversation does not exhibit fraud markers, nor does it establish authenticated safety protocols. Additional context is required."
-            summary = "The provided transcript contains neutral conversational exchanges without sufficient evidence to determine fraudulent intent or legitimate institutional protocol."
-        elif active_safeguard and not (active_credentials or active_coercion or active_remote_access):
-            final_risk_level = "LOW RISK"
-            final_score = 10.0
-            confidence = "HIGH"
-            score_semantics = "Legitimate Protocol (Score 10/100). The caller explicitly observes customer security guidelines (physical branch visit, refusal to accept OTPs)."
-            summary = "Legitimate communication confirmed. Despite the presence of sensitive domain keywords (bank, KYC, passbook), the interaction adheres strictly to official customer safety guidelines."
-        elif (active_credentials or active_remote_access or active_coercion) and (active_impersonation or active_urgency or active_secrecy):
-            final_risk_level = "HIGH RISK"
-            final_score = max(current_score, 92.0)
-            confidence = "HIGH"
-            score_semantics = f"Critical Threat (Score {final_score:.0f}/100). Compounded fraudulent combination: Authority Impersonation + Pressure/Secrecy + Credential/Transfer Solicitation."
-            summary = "Critical scam detected! The caller utilizes predatory tactics designed to deceive elderly citizens, including false authority, manufactured urgency, isolation demands, and credential/financial theft."
-        elif total_suspicious_flags >= 2 or active_credentials or active_coercion or active_remote_access:
-            final_risk_level = "HIGH RISK"
-            final_score = max(current_score, 75.0)
-            confidence = "HIGH"
-            score_semantics = f"High Risk (Score {final_score:.0f}/100). Coercive tactics or credential requests detected."
-            summary = "High probability scam. Dangerous patterns observed that violate standard security protocols."
-        elif total_suspicious_flags == 1:
-            final_risk_level = "SUSPICIOUS"
-            final_score = 42.0
-            confidence = "MEDIUM"
-            score_semantics = "Elevated Precaution (Score 42/100). Unverified authority claims or artificial urgency detected without direct credential theft yet."
-            summary = "Suspicious conversational patterns detected. While direct credential theft has not occurred yet, the caller's pressure or unsolicited claims warrant high caution."
-        else:
-            final_risk_level = "LOW RISK"
-            final_score = 8.0
-            confidence = "HIGH"
-            score_semantics = "Low Risk (Score 8/100). Standard conversation without threat markers."
-            summary = "No scam indicators observed in this conversation."
+        reasons: List[str] = []
 
-        protection_recommendations = self._generate_elder_advice(final_risk_level, behavior_matrix)
-        
-        primary_threat = None
-        if active_remote_access:
-            primary_threat = "Remote Access Tool (AnyDesk/QuickSupport) Device Takeover"
-        elif active_credentials:
-            primary_threat = "Direct Credential / OTP Harvesting"
-        elif active_coercion:
-            primary_threat = "Coercive Financial Transfer Fraud"
-        elif active_impersonation and active_urgency:
-            primary_threat = "Authority Impersonation & Panic Intimidation"
-        elif active_impersonation:
-            primary_threat = "Unsolicited Identity Claim"
+        # 1. Conservative rules for ambiguous / insufficient conversations
+        if total_threat_signals == 0 and not active_safeguard:
+            final_risk_level = "INSUFFICIENT_EVIDENCE"
+            final_risk_score = 15.0
+            final_decision = "INCONCLUSIVE"
+            insufficient_ev = True
+            confidence = "LOW"
+            score_semantics = (
+                "Score 15/100 (Indeterminate Baseline). The conversation lacks actionable indicators "
+                "of either fraudulent coercion or verified institutional safeguards. "
+                "This score represents uncertainty under insufficient evidence, not a probability."
+            )
+            reasons.append("The dialogue is too brief or generic to establish fraudulent intent.")
+            reasons.append("No institutional authority claims, urgency markers, or credential requests were identified.")
+            reasons.append("Remains indeterminate until additional conversational turns are observed.")
+
+        # 2. Legitimate conversation (contains sensitive keywords like OTP/KYC, but safeguards present)
+        elif active_safeguard and not (active_credentials or active_transfer or active_remote_access):
+            final_risk_level = "LOW_RISK"
+            final_risk_score = 10.0
+            final_decision = "ALLOW"
+            confidence = "HIGH"
+            score_semantics = (
+                "Score 10/100 (Legitimate Safeguard Verified). The interaction adheres to official banking "
+                "security standards. While sensitive keywords (e.g., OTP, bank, account) were mentioned, "
+                "the speaker explicitly warned against sharing credentials and scheduled an in-person branch verification."
+            )
+            reasons.append("Official security advice detected: customer was instructed never to disclose OTPs.")
+            reasons.append("Invitation to visit local bank branch physically removes coercion.")
+            reasons.append("No pressure, secrecy, or remote application installation requested.")
+
+        # 3. High Risk Scams (multi-vector combination)
+        elif (active_credentials or active_remote_access or active_transfer) and (active_impersonation or active_urgency or active_secrecy):
+            final_risk_level = "HIGH_RISK"
+            final_risk_score = max(current_score, 92.0)
+            final_decision = "BLOCK"
+            confidence = "HIGH"
+            score_semantics = (
+                f"Score {final_risk_score:.0f}/100 (Critical Scam Threat). Compounded fraudulent vectors detected: "
+                "Authority Impersonation + Psychological Pressure/Secrecy + Credential/Asset Extraction. "
+                "Score reflects maximum rule severity based on predatory social engineering patterns."
+            )
+            reasons.append("Caller claimed official authority (Bank, Law Enforcement, or Utility Board).")
+            if active_urgency:
+                reasons.append("Manufactured urgency or punitive threats (arrest, account freeze, power disconnection).")
+            if active_secrecy:
+                reasons.append("Demanded secrecy or forbade consulting family members.")
+            if active_credentials:
+                reasons.append("Directly solicited confidential OTPs or PINs over the phone.")
+            if active_remote_access:
+                reasons.append("Instructed victim to download remote screen-sharing tools (AnyDesk/QuickSupport).")
+            if active_transfer:
+                reasons.append("Demanded money transfer or payment under pressure to a purported 'safety account'.")
+
+        elif total_threat_signals >= 2 or active_credentials or active_transfer or active_remote_access:
+            final_risk_level = "HIGH_RISK"
+            final_risk_score = max(current_score, 75.0)
+            final_decision = "BLOCK"
+            confidence = "HIGH"
+            score_semantics = (
+                f"Score {final_risk_score:.0f}/100 (High Risk Violation). Direct violation of banking/legal protocols "
+                "involving credential or remote tool demands."
+            )
+            reasons.append("Severe behavioral violations detected that match recognized cyber scam vectors.")
+
+        # 4. Suspicious
+        elif total_threat_signals == 1:
+            final_risk_level = "SUSPICIOUS"
+            final_risk_score = 42.0
+            final_decision = "WARN"
+            confidence = "MEDIUM"
+            score_semantics = (
+                "Score 42/100 (Elevated Precaution). An isolated suspicious signal was detected "
+                "(such as an unsolicited authority claim or artificial urgency) without active credential theft yet."
+            )
+            reasons.append("Unverified authority claim or artificial urgency detected.")
+            reasons.append("Direct credential or monetary theft has not yet occurred, but high caution is required.")
+
+        else:
+            final_risk_level = "LOW_RISK"
+            final_risk_score = 8.0
+            final_decision = "ALLOW"
+            confidence = "HIGH"
+            score_semantics = "Score 8/100 (Neutral Conversation). Standard interaction with no threat signals."
+            reasons.append("Standard conversational flow with no malicious indicators.")
+
+        # Recommended Action for elderly user
+        recommended_action = self._determine_recommended_action(final_risk_level, signals_summary)
 
         analysis_id = str(uuid.uuid4())[:8]
 
-        return AnalysisResult(
+        return RiskAssessment(
             id=analysis_id,
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            overall_risk_level=final_risk_level,
-            overall_risk_score=final_score,
+            risk_level=final_risk_level,
+            risk_score=final_risk_score,
+            decision=final_decision,
+            evidence=all_evidence,
+            reasons=reasons,
+            recommended_action=recommended_action,
+            insufficient_evidence=insufficient_ev,
+            analysis_method=self.ANALYSIS_METHOD,
             score_semantics=score_semantics,
             confidence_level=confidence,
             language_detected=lang_detected,
-            summary=summary,
-            primary_threat_vector=primary_threat,
-            behavior_matrix=behavior_matrix,
-            turn_progression=turn_progressions,
-            evidence_findings=all_findings,
-            protection_recommendations=protection_recommendations,
+            signals_summary=signals_summary,
+            turn_progression=turn_evaluations,
+            unsupported_linguistic_cases=UNSUPPORTED_LINGUISTIC_CASES,
             raw_transcript=raw_transcript or "\n".join([f"{t.speaker}: {t.text}" for t in turns]),
             is_demo=is_demo,
             demo_scenario_id=demo_id
         )
 
-    def _generate_elder_advice(self, risk: RiskLevel, matrix: BehaviorMatrix) -> List[str]:
-        """Provides high-contrast, accessible, senior-focused actionable advice."""
-        advice = []
-        if risk == "HIGH RISK":
-            advice.append("🛑 STOP & HANG UP: Disconnect the call immediately. Do not stay on the line.")
-            if matrix.credential_solicitation:
-                advice.append("🔒 NEVER DISCLOSE OTPs OR PINs: Banks and police never ask for 6-digit OTPs, ATM PINs, or UPI PINs under any circumstances.")
-            if matrix.remote_access_malware:
-                advice.append("⚠️ DO NOT INSTALL APPS: Do not install AnyDesk, QuickSupport, or click any APK link received on SMS.")
-            if matrix.financial_coercion:
-                advice.append("🚫 ZERO TRANSFERS: Never send money to any alleged 'safe account' or 'RBI verification account'. These are 100% fraudulent.")
-            advice.append("📞 CALL NATIONAL CYBER HELPLINE 1930: If you have shared any money or credentials, dial 1930 immediately to freeze transactions.")
-            advice.append("👨‍👩‍👦 TALK TO FAMILY: Immediately inform your son, daughter, or trusted neighbor. Scammers rely on keeping you isolated.")
+    def _determine_recommended_action(self, risk: RiskLevel, summary: BehavioralSignalsSummary) -> str:
+        """Determines concise, practical senior protection directive."""
+        if risk == "HIGH_RISK":
+            actions = ["Disconnect the phone call immediately. Do not stay on the line."]
+            if summary.credential_requests:
+                actions.append("Never share your 6-digit OTP, ATM PIN, or UPI PIN with anyone.")
+            if summary.remote_access_requests:
+                actions.append("Do not install AnyDesk or QuickSupport apps requested over the phone.")
+            if summary.financial_transfer_requests:
+                actions.append("Never transfer money to alleged 'safety accounts' or scan QR codes.")
+            actions.append("Call National Cybercrime Helpline 1930 immediately if money was transferred.")
+            actions.append("Inform a family member or trusted neighbor right away.")
+            return " ".join(actions)
         elif risk == "SUSPICIOUS":
-            advice.append("⏸️ PAUSE BEFORE ACTING: Do not rush into making payments or decisions due to deadlines.")
-            advice.append("🏢 INDEPENDENT VERIFICATION: Ask for the caller's name and designation, hang up, and call the official telephone number printed on your utility bill or bank card.")
-            advice.append("🤝 CONSULT A SECOND OPINION: Discuss this request with a family member or trusted friend before agreeing.")
-            advice.append("🔐 KEEP CREDENTIALS SAFE: Remember that official agencies will never penalize you for taking time to verify.")
-        elif risk == "INSUFFICIENT EVIDENCE":
-            advice.append("🔍 REMAIN VIGILANT: This interaction is too brief to confirm intent. Ask who is calling and their official purpose.")
-            advice.append("🛡️ DO NOT VOLUNTEER INFORMATION: Do not share personal details, bank accounts, or identity numbers to unverified inquiries.")
-            advice.append("📞 VERIFY CALLER ID: If in doubt, ask them to send an official letter or written notice.")
-        else: # LOW RISK
-            advice.append("✅ ROUTINE PROTOCOL: The interaction complies with safe banking practices.")
-            advice.append("🏛️ BRANCH VISIT: For KYC or document updates, always prefer visiting your local bank branch in person at your convenience.")
-            advice.append("🛡️ GENERAL RULE: Continue your healthy habit of never sharing OTPs or passwords over phone calls.")
-            
-        return advice
+            return (
+                "Pause before taking any action. Do not rush into making payments or decisions due to deadlines. "
+                "Hang up, look up the official phone number printed on your utility bill or bank card, and verify independently. "
+                "Consult a trusted family member before proceeding."
+            )
+        elif risk == "INSUFFICIENT_EVIDENCE":
+            return (
+                "Remain vigilant. This conversation is too brief or ambiguous to determine intent. "
+                "Do not volunteer personal banking details, Aadhaar numbers, or passwords. "
+                "Ask the caller to send an official written notice if they represent an institution."
+            )
+        else: # LOW_RISK
+            return (
+                "Safe communication protocol verified. For any account or KYC updates, always visit your local "
+                "bank branch in person at your convenience. Continue the safe practice of never disclosing OTPs."
+            )
 
-engine = ScamDetectionEngine()
+engine = ConversationRiskEngine()

@@ -1,30 +1,25 @@
-import type { AnalysisResult, ScenarioMetadata } from './types';
+import type { RiskAssessment, ProgressionResponse, DemoScenario } from './types';
 
-const API_BASE = '/api';
+// Support VITE_API_BASE_URL environment variable, falling back to empty string for relative proxy
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-export async function fetchHealth(): Promise<{ status: string; service: string }> {
+export async function fetchHealth(): Promise<{ status: string; service: string; analysis_method: string }> {
   const res = await fetch(`${API_BASE}/health`);
-  if (!res.ok) throw new Error('Failed to reach backend health endpoint');
+  if (!res.ok) throw new Error('Health check failed: ElderShield backend unreachable');
   return res.json();
 }
 
-export async function fetchScenarios(): Promise<ScenarioMetadata[]> {
-  const res = await fetch(`${API_BASE}/scenarios`);
-  if (!res.ok) throw new Error('Failed to fetch demo scenarios');
+export async function fetchDemoScenarios(): Promise<DemoScenario[]> {
+  const res = await fetch(`${API_BASE}/api/demo-scenarios`);
+  if (!res.ok) throw new Error('Failed to fetch benchmark demo scenarios');
   return res.json();
 }
 
-export async function fetchRecentAnalyses(limit = 10): Promise<AnalysisResult[]> {
-  const res = await fetch(`${API_BASE}/recent?limit=${limit}`);
-  if (!res.ok) throw new Error('Failed to fetch recent analyses');
-  return res.json();
-}
-
-export async function analyzeTranscript(
-  transcript: string,
+export async function analyzeConversation(
+  transcript?: string,
   demoScenarioId?: string
-): Promise<AnalysisResult> {
-  const res = await fetch(`${API_BASE}/analyze`, {
+): Promise<RiskAssessment> {
+  const res = await fetch(`${API_BASE}/api/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -34,7 +29,32 @@ export async function analyzeTranscript(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Analysis failed' }));
-    throw new Error(err.detail || 'Analysis service returned an error');
+    throw new Error(err.detail || 'ElderShield detection engine returned an error');
   }
+  return res.json();
+}
+
+export async function analyzeProgression(
+  transcript?: string,
+  demoScenarioId?: string
+): Promise<ProgressionResponse> {
+  const res = await fetch(`${API_BASE}/api/analyze/progression`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      transcript: transcript || undefined,
+      demo_scenario_id: demoScenarioId || undefined,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Progression analysis failed' }));
+    throw new Error(err.detail || 'ElderShield progression service returned an error');
+  }
+  return res.json();
+}
+
+export async function fetchRecentAnalyses(limit = 15): Promise<RiskAssessment[]> {
+  const res = await fetch(`${API_BASE}/api/recent?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to retrieve recent session evaluations');
   return res.json();
 }

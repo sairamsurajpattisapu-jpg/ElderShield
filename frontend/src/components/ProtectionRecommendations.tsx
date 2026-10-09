@@ -7,10 +7,10 @@ import {
   Check,
   ExternalLink,
 } from 'lucide-react';
-import type { AnalysisResult } from '../types';
+import type { RiskAssessment } from '../types';
 
 interface ProtectionRecommendationsProps {
-  result: AnalysisResult;
+  result: RiskAssessment;
 }
 
 export const ProtectionRecommendations: React.FC<ProtectionRecommendationsProps> = ({ result }) => {
@@ -19,22 +19,26 @@ export const ProtectionRecommendations: React.FC<ProtectionRecommendationsProps>
   const handleCopyReport = () => {
     const reportText = `=== ELDERSHIELD SCAM INCIDENT REPORT ===
 Scan ID: ${result.id}
-Date & Time: ${result.timestamp}
-Overall Risk Level: ${result.overall_risk_level} (Score: ${result.overall_risk_score}/100)
+Timestamp: ${result.timestamp}
+Classification: ${result.risk_level} (Score: ${result.risk_score}/100)
+Decision: ${result.decision}
 Language Detected: ${result.language_detected}
-Primary Threat Vector: ${result.primary_threat_vector || 'None identified'}
+Method: ${result.analysis_method}
 
-RATIONALE:
-${result.summary}
+SCORE SEMANTICS:
+${result.score_semantics}
 
-KEY PROTECTIVE ACTIONS FOR SENIOR:
-${result.protection_recommendations.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+RECOMMENDED ACTION FOR SENIOR:
+${result.recommended_action}
 
-FLAGGED EVIDENCE QUOTES:
-${result.evidence_findings.map((f) => `- Turn ${f.turn_number} (${f.behavior_category}): "${f.exact_quote}" -> ${f.explanation}`).join('\n')}
+DETERMINISTIC REASONS:
+${result.reasons.map((r, i) => `${i + 1}. ${r}`).join('\n')}
 
-NATIONAL CYBERCRIME HELPLINE: 1930
-Emergency Cyber Reporting Portal: https://cybercrime.gov.in
+FLAGGED EVIDENCE ITEMS:
+${result.evidence.map((f) => `- Turn ${f.turn_number} (${f.signal_category}): "${f.exact_quote}" -> ${f.explanation}`).join('\n')}
+
+NATIONAL CYBERCRIME HELPLINE: Dial 1930
+Reporting Portal: https://cybercrime.gov.in
 ========================================`;
 
     navigator.clipboard.writeText(reportText).then(() => {
@@ -73,10 +77,10 @@ Emergency Cyber Reporting Portal: https://cybercrime.gov.in
             gap: '8px',
           }}>
             <ShieldAlert size={20} color="var(--accent-cyan)" />
-            <span>Senior Protection Protocol & Incident Action Plan</span>
+            <span>Recommended Actions & Protection Plan</span>
           </h3>
           <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Direct, practical guidance tailored for elderly citizens and their family members.
+            Actionable instructions designed to protect elderly citizens from unauthorized debit and emotional manipulation.
           </p>
         </div>
 
@@ -122,46 +126,66 @@ Emergency Cyber Reporting Portal: https://cybercrime.gov.in
         </div>
       </div>
 
-      {/* List of Practical Advice Cards */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {result.protection_recommendations.map((rec, index) => (
-          <div
-            key={index}
-            style={{
-              backgroundColor: 'var(--bg-primary)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: '14px 18px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '14px',
-            }}
-          >
-            <div style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(6, 182, 212, 0.15)',
-              color: 'var(--accent-cyan)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: '0.85rem',
-              flexShrink: 0,
-            }}>
-              {index + 1}
+      {/* Main Recommended Action Callout */}
+      <div style={{
+        backgroundColor: 'var(--bg-primary)',
+        border: '1.5px solid var(--border-prominent)',
+        borderRadius: 'var(--radius-md)',
+        padding: '18px 22px',
+        marginBottom: '18px',
+      }}>
+        <div style={{ fontSize: '0.78rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', fontWeight: 800, marginBottom: '6px' }}>
+          Primary Protection Directive
+        </div>
+        <p style={{ fontSize: '1.02rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+          {result.recommended_action}
+        </p>
+      </div>
+
+      {/* Specific Deterministic Reasons */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ fontSize: '0.84rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px' }}>
+          Rationale Summary ({result.reasons.length} Points)
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {result.reasons.map((rec, index) => (
+            <div
+              key={index}
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+              }}
+            >
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                color: 'var(--accent-cyan)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontSize: '0.8rem',
+                flexShrink: 0,
+              }}>
+                {index + 1}
+              </div>
+              <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                {rec}
+              </div>
             </div>
-            <div style={{ fontSize: '0.94rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.45 }}>
-              {rec}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       {/* Emergency Cyber helpline and Family escalation card */}
       <div style={{
-        marginTop: '20px',
         padding: '18px 22px',
         backgroundColor: 'rgba(239, 68, 68, 0.08)',
         border: '1.5px solid var(--risk-high-border)',
@@ -188,10 +212,10 @@ Emergency Cyber Reporting Portal: https://cybercrime.gov.in
           </div>
           <div>
             <div style={{ fontSize: '1rem', fontWeight: 800, color: '#fca5a5' }}>
-              National Cybercrime Helpline: Dial 1930
+              National Cybercrime Reporting Helpline: 1930
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Citizen Financial Cyber Fraud Reporting System (Govt of India). Call within the golden hour to freeze fraudulent bank transfers immediately.
+              Toll-free emergency financial fraud helpline. Call immediately within the golden hour to freeze fraudulent bank transfers.
             </p>
           </div>
         </div>

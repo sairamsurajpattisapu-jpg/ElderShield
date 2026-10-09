@@ -1,29 +1,31 @@
 import React from 'react';
 import { History, ShieldAlert, ShieldCheck, AlertOctagon, HelpCircle, ChevronRight } from 'lucide-react';
-import type { AnalysisResult, RiskLevel } from '../types';
+import type { RiskAssessment, RiskLevel } from '../types';
 
 interface RecentAnalysesDrawerProps {
-  recentList: AnalysisResult[];
-  onSelectAnalysis: (result: AnalysisResult) => void;
+  recentList: RiskAssessment[];
+  onSelectAnalysis: (result: RiskAssessment) => void;
   activeId?: string;
+  isRetainingHistory: boolean;
 }
 
 export const RecentAnalysesDrawer: React.FC<RecentAnalysesDrawerProps> = ({
   recentList,
   onSelectAnalysis,
   activeId,
+  isRetainingHistory,
 }) => {
   if (!recentList || recentList.length === 0) return null;
 
   const getRiskBadge = (risk: RiskLevel) => {
     switch (risk) {
-      case 'HIGH RISK':
+      case 'HIGH_RISK':
         return { text: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', icon: <AlertOctagon size={13} /> };
       case 'SUSPICIOUS':
         return { text: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)', border: '#f59e0b', icon: <ShieldAlert size={13} /> };
-      case 'LOW RISK':
+      case 'LOW_RISK':
         return { text: '#10b981', bg: 'rgba(16, 185, 129, 0.15)', border: '#10b981', icon: <ShieldCheck size={13} /> };
-      case 'INSUFFICIENT EVIDENCE':
+      case 'INSUFFICIENT_EVIDENCE':
       default:
         return { text: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)', border: '#94a3b8', icon: <HelpCircle size={13} /> };
     }
@@ -42,26 +44,34 @@ export const RecentAnalysesDrawer: React.FC<RecentAnalysesDrawerProps> = ({
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: '16px',
+        flexWrap: 'wrap',
+        gap: '8px',
       }}>
-        <h3 style={{
-          fontSize: '1.15rem',
-          fontWeight: 700,
-          color: 'var(--text-primary)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}>
-          <History size={19} color="var(--accent-cyan)" />
-          <span>Recent Detection Activity ({recentList.length})</span>
-        </h3>
+        <div>
+          <h3 style={{
+            fontSize: '1.15rem',
+            fontWeight: 700,
+            color: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}>
+            <History size={19} color="var(--accent-cyan)" />
+            <span>Recent Detection Activity ({recentList.length})</span>
+          </h3>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+            {isRetainingHistory ? 'Stored locally in browser (Privacy mode: Retaining)' : 'Session-scoped in-memory storage only'}
+          </p>
+        </div>
+
         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          Click to inspect details
+          Click to inspect evaluation
         </span>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {recentList.map((item) => {
-          const badge = getRiskBadge(item.overall_risk_level);
+          const badge = getRiskBadge(item.risk_level);
           const isSelected = activeId === item.id;
 
           return (
@@ -95,7 +105,7 @@ export const RecentAnalysesDrawer: React.FC<RecentAnalysesDrawerProps> = ({
                   border: `1px solid ${badge.border}`,
                 }}>
                   {badge.icon}
-                  {item.overall_risk_level}
+                  {item.risk_level.replace('_', ' ')}
                 </span>
 
                 <div>
@@ -104,14 +114,14 @@ export const RecentAnalysesDrawer: React.FC<RecentAnalysesDrawerProps> = ({
                     {item.is_demo && <span style={{ marginLeft: '8px', fontSize: '0.72rem', color: 'var(--accent-cyan)' }}>[Benchmark Demo]</span>}
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {item.timestamp} • {item.turn_progression.length} Turns • {item.evidence_findings.length} Evidence Flags
+                    {item.timestamp} • {item.turn_progression.length} Turns • {item.evidence.length} Evidence Flags • Decision: {item.decision}
                   </div>
                 </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <span style={{ fontSize: '1rem', fontWeight: 800, color: badge.text }}>
-                  {item.overall_risk_score.toFixed(0)} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>/100</span>
+                  {item.risk_score.toFixed(0)} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>/100</span>
                 </span>
                 <ChevronRight size={16} color="var(--text-muted)" />
               </div>

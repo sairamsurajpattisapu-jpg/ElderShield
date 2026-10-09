@@ -3,16 +3,15 @@ import {
   CheckCircle,
   FileText,
   Lightbulb,
-  ShieldAlert,
 } from 'lucide-react';
-import type { EvidenceFinding } from '../types';
+import type { EvidenceItem } from '../types';
 
 interface EvidenceFindingsProps {
-  findings: EvidenceFinding[];
+  evidence: EvidenceItem[];
 }
 
-export const EvidenceFindings: React.FC<EvidenceFindingsProps> = ({ findings }) => {
-  if (!findings || findings.length === 0) {
+export const EvidenceFindings: React.FC<EvidenceFindingsProps> = ({ evidence }) => {
+  if (!evidence || evidence.length === 0) {
     return (
       <div style={{
         backgroundColor: 'var(--bg-surface)',
@@ -23,9 +22,9 @@ export const EvidenceFindings: React.FC<EvidenceFindingsProps> = ({ findings }) 
         textAlign: 'center',
       }}>
         <CheckCircle size={32} color="var(--risk-low)" style={{ margin: '0 auto 10px' }} />
-        <h4 style={{ fontSize: '1.05rem', fontWeight: 600 }}>No Adverse Evidence Flagged</h4>
+        <h4 style={{ fontSize: '1.05rem', fontWeight: 600 }}>No Malicious Evidence Found</h4>
         <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-          The conversation contains no predatory indicators or coercive credential demands.
+          The analyzed conversation did not contain any predatory cues or credential extraction markers.
         </p>
       </div>
     );
@@ -71,17 +70,17 @@ export const EvidenceFindings: React.FC<EvidenceFindingsProps> = ({ findings }) 
             gap: '8px',
           }}>
             <FileText size={20} color="var(--accent-cyan)" />
-            <span>Deterministic Evidence Ledger ({findings.length} Items Linked)</span>
+            <span>Verifiable Evidence Ledger ({evidence.length} Indicators Flagged)</span>
           </h3>
           <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Every finding links directly to an exact quote and turn number in the transcript. No hallucinations or ungrounded claims.
+            Every finding is anchored strictly to an exact verbatim phrase in the conversation with turn attribution.
           </p>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
-        {findings.map((finding, idx) => {
-          const sev = getSeverityStyle(finding.severity);
+        {evidence.map((item, idx) => {
+          const sev = getSeverityStyle(item.severity);
 
           return (
             <div
@@ -117,7 +116,7 @@ export const EvidenceFindings: React.FC<EvidenceFindingsProps> = ({ findings }) 
                     borderRadius: '4px',
                     border: '1px solid rgba(6, 182, 212, 0.25)',
                   }}>
-                    {finding.behavior_category.replace('_', ' ')}
+                    {item.signal_category.replace('_', ' ')}
                   </span>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -130,10 +129,10 @@ export const EvidenceFindings: React.FC<EvidenceFindingsProps> = ({ findings }) 
                       color: sev.text,
                       border: `1px solid ${sev.border}`,
                     }}>
-                      {finding.severity}
+                      {item.severity}
                     </span>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Turn {finding.turn_number}
+                      Turn {item.turn_number}
                     </span>
                   </div>
                 </div>
@@ -147,27 +146,24 @@ export const EvidenceFindings: React.FC<EvidenceFindingsProps> = ({ findings }) 
                   marginBottom: '14px',
                 }}>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, marginBottom: '2px' }}>
-                    Exact Transcript Evidence Quote
+                    Exact Supporting Text Quote
                   </div>
-                  <div style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)', fontStyle: 'italic' }}>
-                    "{finding.exact_quote}"
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                    Spoken by: {finding.speaker}
+                  <div style={{ fontSize: '0.94rem', fontWeight: 600, color: 'var(--text-primary)', fontStyle: 'italic' }}>
+                    "{item.exact_quote}"
                   </div>
                 </div>
 
                 {/* Explanation */}
                 <div style={{ marginBottom: '10px' }}>
                   <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>
-                    Behavioral Explanation
+                    Why This Matters (Explanation)
                   </div>
                   <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                    {finding.explanation}
+                    {item.explanation}
                   </p>
                 </div>
 
-                {/* Why it Matters */}
+                {/* Contribution to Risk */}
                 <div style={{
                   marginBottom: '14px',
                   backgroundColor: 'rgba(15, 23, 42, 0.6)',
@@ -176,26 +172,12 @@ export const EvidenceFindings: React.FC<EvidenceFindingsProps> = ({ findings }) 
                   border: '1px solid var(--border-subtle)',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem', color: 'var(--accent-teal)', fontWeight: 700, marginBottom: '2px' }}>
-                    <Lightbulb size={13} /> Why This Matters for Elderly Users
+                    <Lightbulb size={13} /> Assessment Contribution
                   </div>
                   <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                    {finding.why_it_matters}
+                    {item.contribution}
                   </p>
                 </div>
-              </div>
-
-              {/* Protective Action */}
-              <div style={{
-                paddingTop: '10px',
-                borderTop: '1px solid var(--border-subtle)',
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '8px',
-              }}>
-                <ShieldAlert size={16} color={sev.text} style={{ flexShrink: 0, marginTop: '2px' }} />
-                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Action: {finding.recommended_action}
-                </span>
               </div>
             </div>
           );

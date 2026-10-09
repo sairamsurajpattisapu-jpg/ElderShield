@@ -1,11 +1,11 @@
 import React from 'react';
 import { PlayCircle, ShieldCheck, AlertOctagon, HelpCircle, ShieldAlert } from 'lucide-react';
-import type { ScenarioMetadata, RiskLevel } from '../types';
+import type { DemoScenario, RiskLevel } from '../types';
 
 interface DemoScenarioSelectorProps {
-  scenarios: ScenarioMetadata[];
+  scenarios: DemoScenario[];
   selectedScenarioId: string | null;
-  onSelectScenario: (scenario: ScenarioMetadata) => void;
+  onSelectScenario: (scenario: DemoScenario) => void;
   isLoading: boolean;
 }
 
@@ -17,14 +17,14 @@ export const DemoScenarioSelector: React.FC<DemoScenarioSelectorProps> = ({
 }) => {
   const getBadgeStyle = (risk: RiskLevel) => {
     switch (risk) {
-      case 'LOW RISK':
+      case 'LOW_RISK':
         return {
           bg: 'var(--risk-low-bg)',
           border: 'var(--risk-low-border)',
           color: 'var(--risk-low)',
           icon: <ShieldCheck size={14} />,
         };
-      case 'HIGH RISK':
+      case 'HIGH_RISK':
         return {
           bg: 'var(--risk-high-bg)',
           border: 'var(--risk-high-border)',
@@ -38,7 +38,7 @@ export const DemoScenarioSelector: React.FC<DemoScenarioSelectorProps> = ({
           color: 'var(--risk-suspicious)',
           icon: <ShieldAlert size={14} />,
         };
-      case 'INSUFFICIENT EVIDENCE':
+      case 'INSUFFICIENT_EVIDENCE':
       default:
         return {
           bg: 'var(--risk-uncertain-bg)',
@@ -83,11 +83,11 @@ export const DemoScenarioSelector: React.FC<DemoScenarioSelectorProps> = ({
               borderRadius: '4px',
               border: '1px solid rgba(6, 182, 212, 0.3)',
             }}>
-              Deterministic Tests
+              Deterministic Test Cases
             </span>
           </h3>
           <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Click any certified test case below to inspect turn-by-turn progressive risk evaluation in the core engine.
+            Click any reproducible test case below to inspect turn-by-turn progressive risk evaluation in the core engine.
           </p>
         </div>
       </div>
@@ -141,7 +141,7 @@ export const DemoScenarioSelector: React.FC<DemoScenarioSelectorProps> = ({
                     color: badge.color,
                   }}>
                     {badge.icon}
-                    {sc.expected_classification}
+                    {sc.expected_classification.replace('_', ' ')}
                   </span>
 
                   <span style={{

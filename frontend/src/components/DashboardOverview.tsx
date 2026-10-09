@@ -1,21 +1,23 @@
 import React from 'react';
-import { ShieldCheck, Activity, AlertTriangle, AlertOctagon, ArrowRight, Layers } from 'lucide-react';
-import type { AnalysisResult } from '../types';
+import { ShieldCheck, Activity, AlertTriangle, AlertOctagon, ArrowRight, Layers, Sparkles } from 'lucide-react';
+import type { RiskAssessment } from '../types';
 
 interface DashboardOverviewProps {
-  recentAnalyses: AnalysisResult[];
+  recentAnalyses: RiskAssessment[];
   onStartNewAnalysis: () => void;
+  onExploreScenarios: () => void;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   recentAnalyses,
   onStartNewAnalysis,
+  onExploreScenarios,
 }) => {
   const totalScans = recentAnalyses.length;
-  const highRiskCount = recentAnalyses.filter(a => a.overall_risk_level === 'HIGH RISK').length;
-  const suspiciousCount = recentAnalyses.filter(a => a.overall_risk_level === 'SUSPICIOUS').length;
-  const lowRiskCount = recentAnalyses.filter(a => a.overall_risk_level === 'LOW RISK').length;
-  const uncertainCount = recentAnalyses.filter(a => a.overall_risk_level === 'INSUFFICIENT EVIDENCE').length;
+  const highRiskCount = recentAnalyses.filter(a => a.risk_level === 'HIGH_RISK').length;
+  const suspiciousCount = recentAnalyses.filter(a => a.risk_level === 'SUSPICIOUS').length;
+  const lowRiskCount = recentAnalyses.filter(a => a.risk_level === 'LOW_RISK').length;
+  const uncertainCount = recentAnalyses.filter(a => a.risk_level === 'INSUFFICIENT_EVIDENCE').length;
 
   return (
     <section style={{
@@ -77,31 +79,51 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </span>
             </div>
             <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
-              Specialized cybersecurity barrier for seniors in India. Evaluates conversational intent across English, Hindi, Telugu, and mixed dialect scripts to detect coercive payment demands, fake police arrest threats, and remote app takeovers.
+              Specialized conversational fraud barrier for seniors. Evaluates multi-vector behavioral signals across English, Hindi, Telugu, and mixed dialect scripts to detect coercive payment demands, fake police arrest threats, and remote app takeovers.
             </p>
           </div>
         </div>
 
-        <button
-          onClick={onStartNewAnalysis}
-          style={{
-            backgroundColor: 'var(--accent-cyan)',
-            color: '#080c16',
-            border: 'none',
-            borderRadius: 'var(--radius-md)',
-            padding: '12px 22px',
-            fontWeight: 700,
-            fontSize: '0.96rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            transition: 'background-color 0.15s ease',
-            boxShadow: '0 4px 14px rgba(6, 182, 212, 0.3)',
-          }}
-        >
-          <span>Analyze Call Transcript</span>
-          <ArrowRight size={18} />
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={onExploreScenarios}
+            style={{
+              backgroundColor: 'var(--bg-surface-elevated)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 18px',
+              fontWeight: 600,
+              fontSize: '0.92rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <Sparkles size={16} color="var(--accent-cyan)" />
+            <span>Demo Scenarios</span>
+          </button>
+
+          <button
+            onClick={onStartNewAnalysis}
+            style={{
+              backgroundColor: 'var(--accent-cyan)',
+              color: '#080c16',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 22px',
+              fontWeight: 700,
+              fontSize: '0.96rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 14px rgba(6, 182, 212, 0.3)',
+            }}
+          >
+            <span>Start Analysis</span>
+            <ArrowRight size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Activity and Risk Metrics Breakdown */}

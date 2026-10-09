@@ -1,76 +1,93 @@
 from typing import List, Optional, Dict, Literal
 from pydantic import BaseModel, Field
 
-RiskLevel = Literal["LOW RISK", "SUSPICIOUS", "HIGH RISK", "INSUFFICIENT EVIDENCE"]
-BehaviorCategory = Literal[
+RiskLevel = Literal["LOW_RISK", "SUSPICIOUS", "HIGH_RISK", "INSUFFICIENT_EVIDENCE"]
+DecisionType = Literal["ALLOW", "WARN", "BLOCK", "INCONCLUSIVE"]
+
+SignalCategory = Literal[
     "IMPERSONATION",
     "URGENCY_INTIMIDATION",
     "SECRECY_ISOLATION",
-    "CREDENTIAL_SOLICITATION",
-    "FINANCIAL_COERCION",
-    "REMOTE_ACCESS_MALWARE",
+    "CREDENTIAL_REQUEST",
+    "FINANCIAL_TRANSFER",
+    "REMOTE_ACCESS",
+    "VERIFICATION_BYPASS",
     "LEGITIMATE_SAFEGUARD",
     "NEUTRAL_INQUIRY"
 ]
 
 class ConversationTurn(BaseModel):
     turn_number: int
-    speaker: str = Field(..., description="e.g., 'Caller', 'Senior', 'Bank Official'")
+    speaker: str = Field(..., description="e.g. 'Caller', 'Senior', 'Bank Official'")
     text: str
 
-class EvidenceFinding(BaseModel):
+class EvidenceItem(BaseModel):
     turn_number: int
-    speaker: str
-    behavior_category: BehaviorCategory
-    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
     exact_quote: str
+    signal_category: SignalCategory
     explanation: str
-    why_it_matters: str
-    recommended_action: str
+    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    contribution: str = Field(..., description="Contribution or impact to risk assessment score")
 
-class TurnProgression(BaseModel):
+class TurnEvaluation(BaseModel):
     turn_number: int
     speaker: str
     text: str
     cumulative_risk_score: float = Field(..., ge=0, le=100)
     turn_risk_level: RiskLevel
-    newly_detected_behaviors: List[str]
+    newly_detected_signals: List[str]
     turn_rationale: str
+    highlighted_spans: List[str] = Field(default_factory=list)
 
-class BehaviorMatrix(BaseModel):
+class BehavioralSignalsSummary(BaseModel):
     impersonation: bool = False
-    urgency_intimidation: bool = False
-    secrecy_isolation: bool = False
-    credential_solicitation: bool = False
-    financial_coercion: bool = False
-    remote_access_malware: bool = False
+    urgency_and_threats: bool = False
+    requests_for_secrecy: bool = False
+    credential_requests: bool = False
+    financial_transfer_requests: bool = False
+    remote_access_requests: bool = False
+    verification_bypass_attempts: bool = False
     legitimate_safeguards_present: bool = False
 
-class AnalysisResult(BaseModel):
-    id: str
-    timestamp: str
-    overall_risk_level: RiskLevel
-    overall_risk_score: float = Field(..., ge=0, le=100)
+class RiskAssessment(BaseModel):
+    risk_level: RiskLevel
+    risk_score: float = Field(..., ge=0, le=100, description="Rule-based calibrated score index from 0 to 100")
+    decision: DecisionType
+    evidence: List[EvidenceItem]
+    reasons: List[str]
+    recommended_action: str
+    insufficient_evidence: bool
+    analysis_method: str = "rule-based-behavioral-v1"
+
+    # Additional contextual fields for complete UX & compliance
     score_semantics: str
     confidence_level: Literal["HIGH", "MEDIUM", "LOW"]
     language_detected: str
-    summary: str
-    primary_threat_vector: Optional[str] = None
-    behavior_matrix: BehaviorMatrix
-    turn_progression: List[TurnProgression]
-    evidence_findings: List[EvidenceFinding]
-    protection_recommendations: List[str]
-    raw_transcript: str
+    signals_summary: BehavioralSignalsSummary
+    turn_progression: List[TurnEvaluation]
+    unsupported_linguistic_cases: List[str] = Field(default_factory=list)
+    id: str
+    timestamp: str
+    raw_transcript: Optional[str] = None
     is_demo: bool = False
     demo_scenario_id: Optional[str] = None
 
 class AnalyzeRequest(BaseModel):
     transcript: Optional[str] = None
     turns: Optional[List[ConversationTurn]] = None
-    language_hint: Optional[str] = "auto"
     demo_scenario_id: Optional[str] = None
+    language_hint: Optional[str] = "auto"
 
-class ScenarioMetadata(BaseModel):
+class ProgressionResponse(BaseModel):
+    id: str
+    turns: List[TurnEvaluation]
+    final_risk_level: RiskLevel
+    final_risk_score: float
+    decision: DecisionType
+    reasons: List[str]
+    analysis_method: str = "rule-based-behavioral-v1"
+
+class DemoScenario(BaseModel):
     id: str
     title: str
     expected_classification: RiskLevel
@@ -79,3 +96,4 @@ class ScenarioMetadata(BaseModel):
     language: str
     description: str
     turns: List[ConversationTurn]
+    raw_transcript: str

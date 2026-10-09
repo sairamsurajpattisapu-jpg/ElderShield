@@ -1,0 +1,320 @@
+{
+  "timestamp": "2026-10-09 11:31:11",
+  "total_scenarios": 17,
+  "engine_metrics": {
+    "true_positives": 14,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "true_negatives": 3,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "false_positive_rate": 0.0,
+    "accuracy": 1.0
+  },
+  "baseline_metrics": {
+    "true_positives": 11,
+    "false_positives": 1,
+    "false_negatives": 3,
+    "true_negatives": 2,
+    "precision": 0.9167,
+    "recall": 0.7857,
+    "f1_score": 0.8462,
+    "false_positive_rate": 0.3333,
+    "accuracy": 0.7647
+  },
+  "scenarios": [
+    {
+      "id": "scenario_01_legit_bank",
+      "name": "1. Legitimate bank conversation",
+      "expected": "LOW_RISK",
+      "engine_pred": "LOW_RISK",
+      "engine_score": 10.0,
+      "engine_decision": "ALLOW",
+      "baseline_pred": "LOW_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 1,
+      "evidence_quotes": [
+        "come to our branch"
+      ],
+      "recommended_action": "Safe communication protocol verified. For any account or KYC updates, always visit your local bank branch in person at your convenience. Continue the safe practice of never disclosing OTPs."
+    },
+    {
+      "id": "scenario_02_legit_otp",
+      "name": "2. Legitimate OTP discussion",
+      "expected": "LOW_RISK",
+      "engine_pred": "LOW_RISK",
+      "engine_score": 10.0,
+      "engine_decision": "ALLOW",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 2,
+      "evidence_quotes": [
+        "calling from HDFC",
+        "visit your local branch in person"
+      ],
+      "recommended_action": "Safe communication protocol verified. For any account or KYC updates, always visit your local bank branch in person at your convenience. Continue the safe practice of never disclosing OTPs."
+    },
+    {
+      "id": "scenario_03_govt_impersonation",
+      "name": "3. Government-authority impersonation",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 94.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 3,
+      "evidence_quotes": [
+        "calling from CBI",
+        "Stay on the line",
+        "RBI safety account"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never transfer money to alleged 'safety accounts' or scan QR codes. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_04_fake_account_suspension",
+      "name": "4. Fake account suspension",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 92.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 3,
+      "evidence_quotes": [
+        "account suspended today",
+        "within 10 minutes",
+        "Read out the sms code"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never share your 6-digit OTP, ATM PIN, or UPI PIN with anyone. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_05_urgent_payment",
+      "name": "5. Urgent payment request",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 94.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "LOW_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 4,
+      "evidence_quotes": [
+        "Calling from electricity board",
+        "Power will be cut",
+        "before disconnection",
+        "Pay via Google Pay right now"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never transfer money to alleged 'safety accounts' or scan QR codes. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_06_otp_theft",
+      "name": "6. OTP theft",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 75.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 1,
+      "evidence_quotes": [
+        "share the 6 digit"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never share your 6-digit OTP, ATM PIN, or UPI PIN with anyone. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_07_upi_pin_request",
+      "name": "7. UPI PIN request",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 75.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 1,
+      "evidence_quotes": [
+        "enter your UPI PIN"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never share your 6-digit OTP, ATM PIN, or UPI PIN with anyone. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_08_remote_access_scam",
+      "name": "8. Remote-access application scam",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 75.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "LOW_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 1,
+      "evidence_quotes": [
+        "Download QuickSupport app"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Do not install AnyDesk or QuickSupport apps requested over the phone. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_09_secrecy_isolation",
+      "name": "9. Secrecy and isolation tactics",
+      "expected": "HIGH_RISK",
+      "engine_pred": "SUSPICIOUS",
+      "engine_score": 42.0,
+      "engine_decision": "WARN",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": false,
+      "language_detected": "English",
+      "evidence_count": 1,
+      "evidence_quotes": [
+        "Do not tell anyone"
+      ],
+      "recommended_action": "Pause before taking any action. Do not rush into making payments or decisions due to deadlines. Hang up, look up the official phone number printed on your utility bill or bank card, and verify independently. Consult a trusted family member before proceeding."
+    },
+    {
+      "id": "scenario_10_mixed_legit_suspicious",
+      "name": "10. Mixed legitimate and suspicious conversation",
+      "expected": "SUSPICIOUS",
+      "engine_pred": "SUSPICIOUS",
+      "engine_score": 42.0,
+      "engine_decision": "WARN",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 1,
+      "evidence_quotes": [
+        "within 15 minutes"
+      ],
+      "recommended_action": "Pause before taking any action. Do not rush into making payments or decisions due to deadlines. Hang up, look up the official phone number printed on your utility bill or bank card, and verify independently. Consult a trusted family member before proceeding."
+    },
+    {
+      "id": "scenario_11_ambiguous_conversation",
+      "name": "11. Ambiguous conversation",
+      "expected": "INSUFFICIENT_EVIDENCE",
+      "engine_pred": "INSUFFICIENT_EVIDENCE",
+      "engine_score": 15.0,
+      "engine_decision": "INCONCLUSIVE",
+      "baseline_pred": "LOW_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 0,
+      "evidence_quotes": [],
+      "recommended_action": "Remain vigilant. This conversation is too brief or ambiguous to determine intent. Do not volunteer personal banking details, Aadhaar numbers, or passwords. Ask the caller to send an official written notice if they represent an institution."
+    },
+    {
+      "id": "scenario_12_english_hindi_code_switching",
+      "name": "12. English-Hindi code-switching",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 92.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "Hinglish (Hindi in Roman Script)",
+      "evidence_count": 3,
+      "evidence_quotes": [
+        "officer from cyber cell",
+        "Digital arrest",
+        "paise transfer karo"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never transfer money to alleged 'safety accounts' or scan QR codes. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_13_english_telugu_code_switching",
+      "name": "13. English-Telugu code-switching",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 94.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "Teluglish (Telugu in Roman Script)",
+      "evidence_count": 3,
+      "evidence_quotes": [
+        "Eeroju night current cut",
+        "OTP cheppandi",
+        "QuickSupport app"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never share your 6-digit OTP, ATM PIN, or UPI PIN with anyone. Do not install AnyDesk or QuickSupport apps requested over the phone. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_14_telugu_transliteration",
+      "name": "14. Telugu transliteration",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 92.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "Teluglish (Telugu in Roman Script)",
+      "evidence_count": 2,
+      "evidence_quotes": [
+        "Evariki cheppakandi",
+        "RBI safe account"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never transfer money to alleged 'safety accounts' or scan QR codes. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_15_hindi_transliteration",
+      "name": "15. Hindi transliteration",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 75.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "Hinglish (Hindi in Roman Script)",
+      "evidence_count": 1,
+      "evidence_quotes": [
+        "OTP batao"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never share your 6-digit OTP, ATM PIN, or UPI PIN with anyone. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_16_asr_spelling_errors",
+      "name": "16. Conversation with ASR-like spelling errors",
+      "expected": "HIGH_RISK",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 94.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "HIGH_RISK",
+      "is_engine_correct": true,
+      "language_detected": "English",
+      "evidence_count": 3,
+      "evidence_quotes": [
+        "disconnect tonight",
+        "read out the otpp",
+        "Install quicksupport"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Never share your 6-digit OTP, ATM PIN, or UPI PIN with anyone. Do not install AnyDesk or QuickSupport apps requested over the phone. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    },
+    {
+      "id": "scenario_17_suspicious_no_explicit_otp",
+      "name": "17. Suspicious conversation without explicit OTP or payment keywords",
+      "expected": "SUSPICIOUS",
+      "engine_pred": "HIGH_RISK",
+      "engine_score": 75.0,
+      "engine_decision": "BLOCK",
+      "baseline_pred": "LOW_RISK",
+      "is_engine_correct": false,
+      "language_detected": "English",
+      "evidence_count": 2,
+      "evidence_quotes": [
+        "from cyber crime",
+        "do not tell family"
+      ],
+      "recommended_action": "Disconnect the phone call immediately. Do not stay on the line. Call National Cybercrime Helpline 1930 immediately if money was transferred. Inform a family member or trusted neighbor right away."
+    }
+  ],
+  "methodology_notes": [
+    "Evaluated on 17 synthetic benchmark scenarios covering English, Hindi, Telugu, and mixed code.",
+    "Threat class defined as HIGH_RISK or SUSPICIOUS; Non-threat defined as LOW_RISK or INSUFFICIENT_EVIDENCE.",
+    "Naive keyword baseline flags any mention of 'otp', 'bank', 'money', 'account', 'police'.",
+    "Metrics reflect performance on this synthetic dataset and should not be construed as real-world field benchmarks."
+  ]
+}

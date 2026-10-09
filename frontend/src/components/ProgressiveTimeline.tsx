@@ -7,11 +7,12 @@ import {
   Pause,
   RotateCcw,
   ChevronRight,
+  Highlighter,
 } from 'lucide-react';
-import type { TurnProgression, RiskLevel } from '../types';
+import type { TurnEvaluation, RiskLevel } from '../types';
 
 interface ProgressiveTimelineProps {
-  progressions: TurnProgression[];
+  progressions: TurnEvaluation[];
 }
 
 export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progressions }) => {
@@ -46,13 +47,13 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
 
   const getRiskColor = (risk: RiskLevel) => {
     switch (risk) {
-      case 'HIGH RISK':
+      case 'HIGH_RISK':
         return { text: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444' };
       case 'SUSPICIOUS':
         return { text: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)', border: '#f59e0b' };
-      case 'LOW RISK':
+      case 'LOW_RISK':
         return { text: '#10b981', bg: 'rgba(16, 185, 129, 0.15)', border: '#10b981' };
-      case 'INSUFFICIENT EVIDENCE':
+      case 'INSUFFICIENT_EVIDENCE':
       default:
         return { text: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)', border: '#94a3b8' };
     }
@@ -87,10 +88,10 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
             gap: '8px',
           }}>
             <TrendingUp size={20} color="var(--accent-cyan)" />
-            <span>Progressive Risk Evolution Timeline</span>
+            <span>Progressive Conversation Timeline</span>
           </h3>
           <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Observes real-time threat velocity after each dialogue turn. Engine recalculates risk deterministically as predatory tactics appear.
+            Real-time evaluation for every turn rendered from actual backend progressive analysis.
           </p>
         </div>
 
@@ -105,7 +106,7 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
           border: '1px solid var(--border-subtle)',
         }}>
           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-            Replay Turn {replayIndex} of {progressions.length}
+            Turn {replayIndex} of {progressions.length}
           </span>
 
           <button
@@ -188,7 +189,7 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              Current State at Turn {currentActiveTurn.turn_number}:
+              Assessment at Turn {currentActiveTurn.turn_number}:
             </span>
             <span style={{
               fontSize: '0.78rem',
@@ -199,12 +200,12 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
               color: getRiskColor(currentActiveTurn.turn_risk_level).text,
               border: `1px solid ${getRiskColor(currentActiveTurn.turn_risk_level).border}`,
             }}>
-              {currentActiveTurn.turn_risk_level}
+              {currentActiveTurn.turn_risk_level.replace('_', ' ')}
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Cumulative Risk:</span>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Progressive Score:</span>
             <span style={{
               fontSize: '1.25rem',
               fontWeight: 900,
@@ -224,7 +225,7 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
                            p.speaker.toLowerCase().includes('police') ||
                            p.speaker.toLowerCase().includes('manager');
           const riskStyle = getRiskColor(p.turn_risk_level);
-          const hasNewThreats = p.newly_detected_behaviors.length > 0;
+          const hasNewThreats = p.newly_detected_signals.length > 0;
 
           return (
             <div
@@ -269,7 +270,7 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
                 </div>
               </div>
 
-              {/* Spoken Text & Newly Detected Behaviors */}
+              {/* Spoken Text & Highlighted Spans */}
               <div>
                 <p style={{
                   fontSize: '0.94rem',
@@ -280,8 +281,38 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
                   "{p.text}"
                 </p>
 
+                {/* Highlighted exact quote chips in context */}
+                {p.highlighted_spans && p.highlighted_spans.length > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    flexWrap: 'wrap',
+                    marginTop: '6px',
+                  }}>
+                    <Highlighter size={13} color="var(--accent-cyan)" />
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Flagged in turn:</span>
+                    {p.highlighted_spans.map((span, sIdx) => (
+                      <span
+                        key={sIdx}
+                        style={{
+                          fontSize: '0.74rem',
+                          padding: '1px 6px',
+                          borderRadius: '3px',
+                          backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                          color: '#fcd34d',
+                          border: '1px solid rgba(245, 158, 11, 0.3)',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        "{span}"
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {/* Newly detected behaviors badges */}
-                {p.newly_detected_behaviors.length > 0 && (
+                {p.newly_detected_signals.length > 0 && (
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -290,9 +321,9 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
                     marginTop: '8px',
                   }}>
                     <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      Triggered:
+                      Signals Triggered:
                     </span>
-                    {p.newly_detected_behaviors.map((b, bIdx) => (
+                    {p.newly_detected_signals.map((b, bIdx) => (
                       <span
                         key={bIdx}
                         style={{
@@ -349,7 +380,7 @@ export const ProgressiveTimeline: React.FC<ProgressiveTimelineProps> = ({ progre
                   color: riskStyle.text,
                   border: `1px solid ${riskStyle.border}`,
                 }}>
-                  {p.turn_risk_level}
+                  {p.turn_risk_level.replace('_', ' ')}
                 </span>
               </div>
             </div>

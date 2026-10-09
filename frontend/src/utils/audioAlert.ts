@@ -6,7 +6,9 @@ export function playRiskAlert(riskLevel: string) {
     if (!AudioContext) return;
     const ctx = new AudioContext();
 
-    if (riskLevel === 'HIGH RISK') {
+    const normalized = riskLevel.toUpperCase().replace(/\s+/g, '_');
+
+    if (normalized === 'HIGH_RISK') {
       // 3 urgent warning pulses
       const now = ctx.currentTime;
       [0, 0.22, 0.44].forEach((offset) => {
@@ -22,7 +24,7 @@ export function playRiskAlert(riskLevel: string) {
         osc.start(now + offset);
         osc.stop(now + offset + 0.2);
       });
-    } else if (riskLevel === 'SUSPICIOUS') {
+    } else if (normalized === 'SUSPICIOUS') {
       // 2 caution notes
       const now = ctx.currentTime;
       [0, 0.25].forEach((offset, idx) => {
@@ -37,7 +39,7 @@ export function playRiskAlert(riskLevel: string) {
         osc.start(now + offset);
         osc.stop(now + offset + 0.22);
       });
-    } else if (riskLevel === 'LOW RISK') {
+    } else if (normalized === 'LOW_RISK') {
       // Pleasant reassuring chime
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
