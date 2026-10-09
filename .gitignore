@@ -9,15 +9,50 @@ env/
 venv/
 .venv/
 
-# Build artifacts
+# Build artifacts and distributions
 dist/
 build/
 *.egg-info/
 
-# Environment and IDE
+# Binaries and packages
+*.apk
+*.aab
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Environment files and credentials
 .env
 .env.local
+.env.production
+.env.*.local
+
+# Signing keys and certificates
+*.jks
+*.keystore
+*.pem
+*.key
+*.p12
+*.pfx
+
+# IDE and OS artifacts
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+# Android build outputs and caches
+.gradle/
+**/android/.gradle/
+android/.gradle/
+**/android/app/build/
+android/app/build/
+android/build/
+**/android/local.properties
+android/local.properties
+
+# Pytest and coverage caches
+.pytest_cache/
+.coverage
+htmlcov/

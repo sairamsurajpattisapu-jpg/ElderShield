@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Elder-friendly high contrast color palette -->
+    <color name="primary">#1565C0</color>
+    <color name="primary_dark">#0D47A1</color>
+    <color name="accent">#2E7D32</color>
+
+    <color name="bg_screen">#F8FAFC</color>
+    <color name="card_bg">#FFFFFF</color>
+    <color name="text_primary">#0F172A</color>
+    <color name="text_secondary">#475569</color>
+
+    <!-- Protection Status Colors -->
+    <color name="status_green_bg">#DCFCE7</color>
+    <color name="status_green_text">#14532D</color>
+    <color name="status_green_stroke">#22C55E</color>
+
+    <color name="status_blue_bg">#DBEAFE</color>
+    <color name="status_blue_text">#1E3A8A</color>
+    <color name="status_blue_stroke">#3B82F6</color>
+
+    <color name="status_red_bg">#FEE2E2</color>
+    <color name="status_red_text">#991B1B</color>
+    <color name="status_red_stroke">#EF4444</color>
+
+    <color name="status_amber_bg">#FEF3C7</color>
+    <color name="status_amber_text">#78350F</color>
+    <color name="status_amber_stroke">#F59E0B</color>
+
+    <color name="btn_start">#16A34A</color>
+    <color name="btn_stop">#DC2626</color>
+    <color name="btn_helpline">#9333EA</color>
+</resources>

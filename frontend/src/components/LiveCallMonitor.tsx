@@ -412,6 +412,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                   speaker: 'Caller',
                   text: transcriptText,
                   is_final: isFinal,
+                  client_turn_start_ms: performance.now(),
                 }));
               } else {
                 // If WS disconnected, do local turn display
@@ -1415,14 +1416,14 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                 padding: '12px 14px',
                 backgroundColor: callerIntel.spoofing_suspected
                   ? 'rgba(239, 68, 68, 0.16)'
-                  : callerIntel.verdict === 'VERIFIED_INSTITUTION'
-                  ? 'rgba(16, 185, 129, 0.15)'
+                  : callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH'
+                  ? 'rgba(245, 158, 11, 0.12)'
                   : 'var(--bg-surface-elevated)',
                 border: `1px solid ${
                   callerIntel.spoofing_suspected
                     ? 'var(--risk-high-border)'
-                    : callerIntel.verdict === 'VERIFIED_INSTITUTION'
-                    ? 'var(--risk-low-border)'
+                    : callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH'
+                    ? 'rgba(245, 158, 11, 0.4)'
                     : 'var(--border-subtle)'
                 }`,
                 borderRadius: 'var(--radius-md)',
@@ -1439,12 +1440,20 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                     borderRadius: '4px',
                     backgroundColor: callerIntel.spoofing_suspected
                       ? 'var(--risk-high)'
-                      : callerIntel.verdict === 'VERIFIED_INSTITUTION'
-                      ? 'var(--risk-low)'
-                      : 'rgba(255, 255, 255, 0.1)',
+                      : callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH'
+                      ? '#d97706'
+                      : !callerIntel.is_valid
+                      ? '#ef4444'
+                      : 'rgba(255, 255, 255, 0.15)',
                     color: '#ffffff',
                   }}>
-                    {callerIntel.verdict.replace('_', ' ')}
+                    {callerIntel.spoofing_suspected
+                      ? 'POTENTIALLY SUSPICIOUS'
+                      : callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH'
+                      ? 'KNOWN REGISTRY MATCH (UNAUTHENTICATED)'
+                      : !callerIntel.is_valid
+                      ? 'INVALID NUMBER'
+                      : 'CALLER UNVERIFIED'}
                   </span>
                 </div>
 
@@ -1457,7 +1466,23 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                   )}
                 </div>
 
-                {/* Claimed vs Verified Identity Comparison */}
+                {/* Important Trust & Safety Warning Banner for Registry Match */}
+                {callerIntel.is_registered_institution && (
+                  <div style={{
+                    padding: '8px 10px',
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    borderRadius: 'var(--radius-sm)',
+                    marginBottom: '8px',
+                    fontSize: '0.78rem',
+                    color: '#fef08a',
+                    lineHeight: 1.35,
+                  }}>
+                    ⚠️ <strong>Notice:</strong> Number matches local directory for {callerIntel.registered_organization}. <strong>This does NOT authenticate the caller.</strong> Caller ID can be spoofed over telephony networks. Verify independently using official numbers.
+                  </div>
+                )}
+
+                {/* Claimed vs Registry Match Comparison */}
                 {callerIntel.claimed_organization && (
                   <div style={{
                     padding: '8px 10px',
@@ -1467,24 +1492,26 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                     fontSize: '0.8rem',
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Claimed Identity:</span>
+                      <span style={{ color: 'var(--text-muted)' }}>Claimed Organization:</span>
                       <span style={{ fontWeight: 700, color: '#f8fafc' }}>{callerIntel.claimed_organization}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Verified Identity:</span>
+                      <span style={{ color: 'var(--text-muted)' }}>Registry Status:</span>
                       <span style={{
                         fontWeight: 700,
-                        color: callerIntel.verified_caller_identity ? 'var(--accent-teal)' : '#f87171'
+                        color: callerIntel.is_registered_institution ? '#fbbf24' : '#f87171'
                       }}>
-                        {callerIntel.verified_caller_identity || 'Unverified Personal Mobile'}
+                        {callerIntel.registered_organization
+                          ? `Registry Match: ${callerIntel.registered_organization} (Unauthenticated)`
+                          : 'Unlisted Personal / Mobile Line'}
                       </span>
                     </div>
                   </div>
                 )}
 
                 {callerIntel.registered_organization && !callerIntel.claimed_organization && (
-                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-teal)', marginBottom: '6px' }}>
-                    Registered Entity: {callerIntel.registered_organization}
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24', marginBottom: '6px' }}>
+                    Listed Registry Contact: {callerIntel.registered_organization}
                   </div>
                 )}
 
@@ -1949,7 +1976,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                 backgroundColor: connectionStatus === 'connected' ? '#10b981' : connectionStatus === 'connecting' ? '#f59e0b' : '#64748b',
               }} />
               <span>
-                Backend WebSocket: {connectionStatus === 'connected' ? 'Connected (ws://127.0.0.1:8000/ws/live-call)' : connectionStatus === 'connecting' ? 'Connecting...' : 'Ready'}
+                Backend WebSocket: {connectionStatus === 'connected' ? `Connected (${getLiveCallWsUrl()})` : connectionStatus === 'connecting' ? 'Connecting...' : connectionStatus === 'disconnected' ? 'Disconnected / Reconnecting' : 'Ready'}
               </span>
             </div>
             <span>Language: {selectedLanguage}</span>

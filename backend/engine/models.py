@@ -117,18 +117,85 @@ class CallerIntelligenceResult(BaseModel):
     )
     number_type: Literal["MOBILE", "FIXED_LINE", "TOLL_FREE", "VOIP", "PREMIUM_RATE", "SPECIAL", "UNKNOWN"]
     claimed_organization: Optional[str] = None
-    verified_caller_identity: Optional[str] = None
+    verified_caller_identity: Optional[str] = Field(default=None, description="DEPRECATED: Registry name match only. Does NOT indicate authenticated caller.")
+    caller_authenticated: bool = Field(default=False, description="Whether caller identity has been independently authenticated. Always False for telephone metadata.")
+    authentication_notice: str = Field(
+        default="A phone number or registry match does NOT authenticate a caller. Caller ID can be spoofed over telephony networks. Always verify independently.",
+        description="Explicit trust and safety disclaimer"
+    )
+    location_disclaimer: str = Field(
+        default="Numbering region indicates initial telecom circle allocation only, NOT current physical location or live roaming network.",
+        description="Disclaimer on geocoding metadata"
+    )
+    number_format_validity: Literal["VALID", "INVALID", "MALFORMED"] = "VALID"
+    registry_matching: Literal["MATCHED_LOCAL_REGISTRY", "NO_REGISTRY_MATCH"] = "NO_REGISTRY_MATCH"
+    caller_reputation_status: Literal["REPUTATION_UNAVAILABLE", "INDEPENDENT_EVIDENCE_FOUND", "STATIC_REGISTRY_ONLY"] = "REPUTATION_UNAVAILABLE"
+    caller_classification: Literal[
+        "KNOWN_REGISTRY_MATCH",
+        "UNRECOGNIZED_NUMBER",
+        "INVALID_NUMBER",
+        "POTENTIALLY_SUSPICIOUS",
+        "CALLER_IDENTITY_UNVERIFIED"
+    ] = "CALLER_IDENTITY_UNVERIFIED"
     is_registered_institution: bool = False
     registered_organization: Optional[str] = None
     official_helplines: List[str] = Field(default_factory=list)
     official_url: Optional[str] = None
-    identity_conflict_status: Literal["VERIFIED_MATCH", "POTENTIAL_IDENTITY_CONFLICT", "NO_CONFLICT_UNVERIFIED", "UNKNOWN"] = "UNKNOWN"
+    identity_conflict_status: Literal["REGISTRY_MATCH_UNAUTHENTICATED", "VERIFIED_MATCH", "POTENTIAL_IDENTITY_CONFLICT", "NO_CONFLICT_UNVERIFIED", "UNKNOWN"] = "UNKNOWN"
     spoofing_suspected: bool = False
     spoofing_conflict_details: Optional[str] = None
     reputation_score: float = Field(default=50.0, ge=0, le=100)
-    verdict: Literal["VERIFIED_INSTITUTION", "NORMAL_PERSONAL", "POTENTIAL_IDENTITY_CONFLICT", "SPOOF_CONFLICT", "HIGH_RISK_SUSPECT", "INVALID_FORMAT"]
+    verdict: Literal[
+        "KNOWN_REGISTRY_MATCH",
+        "UNRECOGNIZED_NUMBER",
+        "INVALID_NUMBER",
+        "POTENTIALLY_SUSPICIOUS",
+        "CALLER_IDENTITY_UNVERIFIED",
+        "VERIFIED_INSTITUTION",
+        "NORMAL_PERSONAL",
+        "POTENTIAL_IDENTITY_CONFLICT",
+        "SPOOF_CONFLICT",
+        "HIGH_RISK_SUSPECT",
+        "INVALID_FORMAT"
+    ]
     advisory: str
     evidence_source: str = "ITU E.164 + Google phonenumbers + National Official Institutional Registry v2.2"
     lookup_timestamp: Optional[str] = None
+
+class CallerEvidenceItem(BaseModel):
+    evidence_type: str = "CALLER_IDENTITY"
+    phone_number: str
+    claimed_organization: Optional[str] = None
+    conflict_status: str
+    spoofing_suspected: bool
+    reputation_score: float
+    advisory: str
+
+class UnifiedProtectionRequest(BaseModel):
+    phone_number: Optional[str] = None
+    claimed_organization: Optional[str] = None
+    country_hint: Optional[str] = "IN"
+    transcript: Optional[str] = None
+    turns: Optional[List[ConversationTurn]] = None
+    language_hint: Optional[str] = "auto"
+    demo_scenario_id: Optional[str] = None
+
+class UnifiedProtectionResult(BaseModel):
+    id: str
+    timestamp: str
+    composite_risk_level: RiskLevel
+    composite_risk_score: float = Field(..., ge=0, le=100)
+    decision: DecisionType
+    recommended_action: str
+    # Keep evidence strictly partitioned
+    conversational_evidence: List[EvidenceItem]
+    caller_evidence: Optional[CallerEvidenceItem] = None
+    # Underlying detailed sub-assessments
+    conversational_analysis: RiskAssessment
+    caller_intelligence: Optional[CallerIntelligenceResult] = None
+    alert_required: bool = False
+    warning_title: Optional[str] = None
+    warning_message: Optional[str] = None
+
 
 

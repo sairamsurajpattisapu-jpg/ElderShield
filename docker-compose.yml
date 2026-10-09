@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eldershield-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - ALLOWED_ORIGINS=http://localhost,http://localhost:80,http://localhost:5173,http://127.0.0.1
+      - REQUIRE_AUTH=false
+      - API_KEY=eldershield-production-key-hwv4
+      - RATE_LIMIT_PER_MINUTE=120
+      - MAX_AUDIO_UPLOAD_MB=25
+      - WHISPER_MODEL_SIZE=tiny
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+      - LOG_LEVEL=INFO
+      - ENABLE_JSON_LOGGING=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: eldershield-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

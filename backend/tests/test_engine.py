@@ -199,7 +199,10 @@ def test_caller_intelligence_lookup():
     assert res_sbi.status_code == 200
     data_sbi = res_sbi.json()
     assert data_sbi["is_valid"] is True
-    assert data_sbi["verdict"] == "VERIFIED_INSTITUTION"
+    assert data_sbi["verdict"] in ["KNOWN_REGISTRY_MATCH", "VERIFIED_INSTITUTION"]
+    assert data_sbi["caller_classification"] == "KNOWN_REGISTRY_MATCH"
+    assert data_sbi["caller_authenticated"] is False
+    assert "DOES NOT authenticate" in data_sbi["advisory"] or "NOT authenticate" in data_sbi["advisory"]
     assert "State Bank of India" in data_sbi["registered_organization"]
     assert data_sbi["spoofing_suspected"] is False
 
@@ -213,18 +216,31 @@ def test_caller_intelligence_lookup():
     assert data_spoof["is_valid"] is True
     assert data_spoof["number_type"] == "MOBILE"
     assert data_spoof["verdict"] in ["POTENTIAL_IDENTITY_CONFLICT", "SPOOF_CONFLICT"]
+    assert data_spoof["caller_classification"] == "POTENTIALLY_SUSPICIOUS"
     assert data_spoof["spoofing_suspected"] is True
     assert "CONFLICT" in data_spoof["spoofing_conflict_details"]
 
     # 3. National Cyber Crime Helpline
     res_1930 = client.post("/api/caller-lookup", json={"phone_number": "1930"})
     assert res_1930.status_code == 200
-    assert res_1930.json()["verdict"] == "VERIFIED_INSTITUTION"
+    assert res_1930.json()["verdict"] in ["KNOWN_REGISTRY_MATCH", "VERIFIED_INSTITUTION"]
+    assert res_1930.json()["caller_authenticated"] is False
 
-    # 4. Malformed / Invalid number
+    # 4. Normal unlisted mobile number is NOT automatically classified as a scam
+    res_unlisted = client.post("/api/caller-lookup", json={"phone_number": "+91 98490 99999"})
+    assert res_unlisted.status_code == 200
+    data_unlisted = res_unlisted.json()
+    assert data_unlisted["is_valid"] is True
+    assert data_unlisted["caller_classification"] == "CALLER_IDENTITY_UNVERIFIED"
+    assert data_unlisted["caller_authenticated"] is False
+    assert data_unlisted["spoofing_suspected"] is False
+    assert data_unlisted["reputation_score"] <= 40.0 # Neutral, not scam
+
+    # 5. Malformed / Invalid number
     res_invalid = client.post("/api/caller-lookup", json={"phone_number": "abc-invalid"})
     assert res_invalid.status_code == 200
-    assert res_invalid.json()["verdict"] == "INVALID_FORMAT"
+    assert res_invalid.json()["verdict"] in ["INVALID_FORMAT", "INVALID_NUMBER"]
+    assert res_invalid.json()["caller_classification"] == "INVALID_NUMBER"
 
 def test_websocket_caller_info_message():
     """

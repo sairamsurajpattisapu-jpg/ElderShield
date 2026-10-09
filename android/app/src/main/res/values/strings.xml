@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">ElderShield</string>
+    <string name="shield_active">SHIELD ACTIVE</string>
+    <string name="shield_inactive">SHIELD OFF</string>
+    <string name="status_protected">You are protected against phone scams.</string>
+    <string name="status_monitoring">LISTENING FOR SCAM SIGNS…</string>
+    <string name="status_paused">Tap the green button below to start protection.</string>
+    <string name="status_scam_alert">DANGER: SCAM DETECTED! HANG UP NOW!</string>
+    <string name="btn_start_protection">START PROTECTION</string>
+    <string name="btn_stop_protection">STOP PROTECTION</string>
+    <string name="caller_lookup_title">Check Caller Number</string>
+    <string name="caller_number_hint">Enter or paste phone number</string>
+    <string name="btn_check_caller">CHECK CALLER</string>
+    <string name="btn_helpline">EMERGENCY HELPLINE 1930</string>
+    <string name="hang_up_advice">Disconnect the call immediately. Do not share OTP or transfer any funds.</string>
+    <string name="speakerphone_tip">Tip: Place suspicious calls on speakerphone so ElderShield can listen and protect you.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">ElderShield Settings</string>
+    <string name="pref_server_url">Backend Server URL</string>
+    <string name="pref_server_url_hint">http://10.0.2.2:8000</string>
+    <string name="pref_api_key">Backend API Key</string>
+    <string name="pref_vibrate_alerts">Vibrate on Fraud Detection</string>
+    <string name="pref_sound_alerts">Voice and Sound Alerts</string>
+    <string name="pref_call_screening">Auto-Screen Incoming Calls</string>
+    <string name="privacy_title">Privacy and Zero-Retention</string>
+    <string name="privacy_description">ElderShield processes speech ephemerally. Audio recordings are never retained on this phone or uploaded to long-term storage.</string>
+</resources>

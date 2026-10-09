@@ -119,6 +119,11 @@ class CallerIntelligenceService:
             return CallerIntelligenceResult(
                 raw_input="",
                 is_valid=False,
+                number_format_validity="INVALID",
+                registry_matching="NO_REGISTRY_MATCH",
+                caller_reputation_status="REPUTATION_UNAVAILABLE",
+                caller_classification="INVALID_NUMBER",
+                caller_authenticated=False,
                 number_type="UNKNOWN",
                 reputation_score=50.0,
                 verdict="INVALID_FORMAT",
@@ -134,6 +139,11 @@ class CallerIntelligenceService:
                     return CallerIntelligenceResult(
                         raw_input=raw,
                         is_valid=True,
+                        number_format_validity="VALID",
+                        registry_matching="MATCHED_LOCAL_REGISTRY",
+                        caller_reputation_status="STATIC_REGISTRY_ONLY",
+                        caller_classification="KNOWN_REGISTRY_MATCH",
+                        caller_authenticated=False,
                         e164_format=raw,
                         national_format=raw,
                         country_code="IN",
@@ -147,11 +157,15 @@ class CallerIntelligenceService:
                         identity_conflict_status="VERIFIED_MATCH",
                         verified_caller_identity=org_data["display_name"],
                         spoofing_suspected=False,
-                        reputation_score=5.0, # Highly safe
-                        verdict="VERIFIED_INSTITUTION",
-                        advisory=f"Verified official contact channel for {org_data['display_name']}.",
+                        reputation_score=5.0,
+                        verdict="KNOWN_REGISTRY_MATCH",
+                        advisory=(
+                            f"Number matches a listed institutional contact in local registry ({org_data['display_name']}). "
+                            "This does NOT authenticate the caller. Caller ID can be spoofed over telephony networks. "
+                            "Verify independently using official contact details."
+                        ),
                         lookup_timestamp=datetime.utcnow().isoformat() + "Z",
-                        evidence_source="Official Government Short Code Registry v2.2"
+                        evidence_source="Official Government Short Code Registry v2.2 (Static List)"
                     )
 
         # Parse standard phone number with Google phonenumbers library
@@ -165,10 +179,15 @@ class CallerIntelligenceService:
                 return CallerIntelligenceResult(
                     raw_input=raw,
                     is_valid=False,
+                    number_format_validity="MALFORMED",
+                    registry_matching="NO_REGISTRY_MATCH",
+                    caller_reputation_status="REPUTATION_UNAVAILABLE",
+                    caller_classification="INVALID_NUMBER",
+                    caller_authenticated=False,
                     number_type="UNKNOWN",
                     reputation_score=60.0,
                     verdict="INVALID_FORMAT",
-                    advisory="Malformed or invalid telephone number format."
+                    advisory="Malformed or invalid telephone number format. Input cannot be parsed under ITU rules."
                 )
 
         is_valid = phonenumbers.is_valid_number(parsed)
@@ -176,11 +195,16 @@ class CallerIntelligenceService:
             return CallerIntelligenceResult(
                 raw_input=raw,
                 is_valid=False,
+                number_format_validity="INVALID",
+                registry_matching="NO_REGISTRY_MATCH",
+                caller_reputation_status="REPUTATION_UNAVAILABLE",
+                caller_classification="INVALID_NUMBER",
+                caller_authenticated=False,
                 e164_format=phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164) if parsed else None,
                 number_type="UNKNOWN",
                 reputation_score=65.0,
                 verdict="INVALID_FORMAT",
-                advisory="Number fails telecom ITU validation checks. Exercise caution."
+                advisory="The input cannot be parsed or is invalid under available numbering rules."
             )
 
         e164_fmt = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
@@ -222,27 +246,40 @@ class CallerIntelligenceService:
             if is_registered:
                 break
 
-        # Impersonation & Potential Identity Conflict Check:
-        # Separate number parsing metadata from claimed identity and verified identity
+        # Evidence partitioning:
+        # Separate number validity, registry matching, caller reputation, and conversational evidence
         spoofing_suspected = False
         conflict_details = None
         reputation_score = 30.0 # Standard personal neutral baseline
-        verdict = "NORMAL_PERSONAL"
+        verdict = "UNRECOGNIZED_NUMBER"
+        caller_classification = "CALLER_IDENTITY_UNVERIFIED"
+        registry_matching = "NO_REGISTRY_MATCH"
+        reputation_status = "REPUTATION_UNAVAILABLE"
         conflict_status = "NO_CONFLICT_UNVERIFIED"
         verified_identity = None
-        advisory = f"Standard {type_str.lower()} line registered under {geo_location} ({carrier_name})."
+        matched_inst = None
+        advisory = (
+            "Caller identity is unverified. Assess the conversation carefully and "
+            "never disclose OTPs, PINs, passwords, or banking credentials."
+        )
 
         if is_registered:
-            verdict = "VERIFIED_INSTITUTION"
+            verdict = "KNOWN_REGISTRY_MATCH"
+            caller_classification = "KNOWN_REGISTRY_MATCH"
+            registry_matching = "MATCHED_LOCAL_REGISTRY"
+            reputation_status = "STATIC_REGISTRY_ONLY"
             conflict_status = "VERIFIED_MATCH"
             verified_identity = reg_org_name
             reputation_score = 5.0
-            advisory = f"Verified official telephone line of {reg_org_name}."
+            advisory = (
+                f"Number matches a listed institutional contact in local registry ({reg_org_name}). "
+                "This does NOT authenticate the caller. Caller ID can be spoofed over telephony networks. "
+                "Verify independently using official contact details."
+            )
 
         elif claimed_organization and claimed_organization.strip():
             claim_norm = claimed_organization.lower().strip()
             # Find which institution they claim to be
-            matched_inst = None
             for org_key, org_data in OFFICIAL_INSTITUTIONAL_REGISTRY.items():
                 if any(alias in claim_norm for alias in org_data["aliases"]):
                     matched_inst = org_data
@@ -253,8 +290,10 @@ class CallerIntelligenceService:
                 # But is calling from an unverified mobile SIM or VoIP line!
                 if type_str in ["MOBILE", "VOIP", "UNKNOWN"]:
                     spoofing_suspected = True
-                    reputation_score = 80.0 # Elevated caution due to unverified channel
+                    reputation_score = 80.0
                     verdict = "POTENTIAL_IDENTITY_CONFLICT"
+                    caller_classification = "POTENTIALLY_SUSPICIOUS"
+                    reputation_status = "INDEPENDENT_EVIDENCE_FOUND"
                     conflict_status = "POTENTIAL_IDENTITY_CONFLICT"
                     conflict_details = (
                         f"POTENTIAL IDENTITY CONFLICT: Caller claims to represent {matched_inst['display_name']}, "
@@ -273,17 +312,26 @@ class CallerIntelligenceService:
         if region_code != "IN" and not is_registered:
             reputation_score = max(reputation_score, 75.0)
             verdict = "HIGH_RISK_SUSPECT"
+            caller_classification = "POTENTIALLY_SUSPICIOUS"
+            reputation_status = "INDEPENDENT_EVIDENCE_FOUND"
             advisory = f"International call originating from {region_code}. Telecom metadata indicates foreign numbering allocation."
 
         return CallerIntelligenceResult(
             raw_input=raw,
             is_valid=True,
+            number_format_validity="VALID",
+            registry_matching=registry_matching,
+            caller_reputation_status=reputation_status,
+            caller_classification=caller_classification,
+            caller_authenticated=False,
+            authentication_notice="A phone number or registry match does NOT authenticate a caller. Caller ID can be spoofed over telephony networks. Always verify independently.",
+            location_disclaimer="Numbering region indicates initial telecom circle allocation only, NOT current physical location or live roaming network.",
             e164_format=e164_fmt,
             national_format=nat_fmt,
             country_code=region_code,
             carrier=carrier_name,
             geographic_region=geo_location,
-            metadata_disclaimer="Carrier and telecom circle metadata reflect ITU numbering plan allocations, not verified physical GPS location or live roaming carrier (MNP and VoIP masking may apply).",
+            metadata_disclaimer="Carrier and telecom circle metadata reflect ITU numbering plan allocations only, not verified physical GPS location or live roaming carrier (MNP and VoIP masking may apply).",
             number_type=type_str, # type: ignore
             claimed_organization=claimed_organization,
             verified_caller_identity=verified_identity,

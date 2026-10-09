@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Network permissions for ElderShield backend and WebSocket streaming -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Microphone permission for speakerphone/ambient live scam analysis -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Foreground service for continuous elder protection -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- Accessible vibration alerts for hearing-impaired seniors -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Post notifications for Android 13+ (API 33+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Read phone state for call status awareness -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <application
+        android:name=".ElderShieldApp"
+        android:allowBackup="false"
+        android:icon="@drawable/ic_shield"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/ic_shield"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ElderShield"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="34">
+
+        <!-- Main Elder-Friendly Activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Settings and Privacy Controls Activity -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title"
+            android:parentActivityName=".MainActivity" />
+
+        <!-- Android CallScreeningService for incoming caller triage & spoof defense -->
+        <service
+            android:name=".service.ElderShieldCallScreeningService"
+            android:permission="android.permission.BIND_CALL_SCREENING_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
+        <!-- Active Protection Foreground Service for live acoustic analysis -->
+        <service
+            android:name=".service.ElderShieldProtectionService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

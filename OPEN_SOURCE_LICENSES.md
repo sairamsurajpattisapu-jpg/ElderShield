@@ -20,6 +20,8 @@ ElderShield is built on open-source libraries and pretrained models under permis
 | **React & Vite** | [facebook/react](https://github.com/facebook/react) / [vitejs/vite](https://github.com/vitejs/vite) | MIT License | Senior-accessible reactive user interface with sub-millisecond client state updates and hot reloading. |
 | **phonenumbers** | [daviddrysdale/python-phonenumbers](https://github.com/daviddrysdale/python-phonenumbers) | Apache-2.0 | Google's libphonenumber Python port for E.164 normalization, carrier resolution, telecom circle geocoding, and institutional spoofing conflict detection. |
 | **Lucide Icons** | [lucide-icons/lucide](https://github.com/lucide-icons/lucide) | ISC License | High-contrast, WCAG 2.1-compliant accessibility iconography. |
+| **OkHttp** | [square/okhttp](https://github.com/square/okhttp) | Apache-2.0 | High-performance Android HTTP client and WebSocket streaming engine for full-duplex PCM audio. |
+| **AndroidX & Material** | [google/material-design-icons](https://github.com/material-components/material-components-android) | Apache-2.0 | Modern Android architecture components, foreground service lifecycle, and senior-accessible UI primitives. |
 
 ---
 
