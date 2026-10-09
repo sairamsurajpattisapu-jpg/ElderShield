@@ -11,11 +11,14 @@ from engine.models import (
     AnalyzeRequest,
     ProgressionResponse,
     DemoScenario,
-    ConversationTurn
+    ConversationTurn,
+    CallerLookupRequest,
+    CallerIntelligenceResult
 )
 from engine.analyzer import engine, parse_raw_transcript
 from engine.scenarios import DEMO_SCENARIOS, SCENARIO_LOOKUP
 from engine.asr_service import asr_service
+from engine.caller_intelligence import caller_service
 from engine.stream_session import session_registry
 from engine.privacy import redact_sensitive_data
 
@@ -185,6 +188,18 @@ async def analyze_audio_upload(
         "risk_assessment": assessment
     }
 
+@app.post("/api/caller-lookup", response_model=CallerIntelligenceResult)
+def lookup_caller_identity(request: CallerLookupRequest):
+    """
+    Performs E.164 normalization, carrier lookup, circle geocoding,
+    and institutional identity spoofing conflict verification.
+    """
+    return caller_service.lookup_caller(
+        phone_number=request.phone_number,
+        claimed_organization=request.claimed_organization,
+        country_hint=request.country_hint or "IN"
+    )
+
 @app.get("/api/recent", response_model=List[RiskAssessment])
 def get_recent_analyses(limit: int = 15):
     """Retrieve recent conversation analyses for the current session."""
@@ -268,6 +283,29 @@ async def live_call_websocket(websocket: WebSocket):
                             "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
                             "timestamp": time.time()
                         })
+
+            elif msg_type == "caller_info":
+                phone = data.get("phone_number", "")
+                claimed = data.get("claimed_organization")
+                caller_intel = caller_service.lookup_caller(phone, claimed)
+                await websocket.send_json({
+                    "type": "caller_intelligence",
+                    "session_id": session.session_id,
+                    "caller_data": caller_intel.model_dump(),
+                    "timestamp": time.time()
+                })
+                if caller_intel.spoofing_suspected:
+                    await websocket.send_json({
+                        "type": "warning",
+                        "severity": "CRITICAL",
+                        "title": "SPOOFED IDENTITY DETECTED",
+                        "message": caller_intel.advisory,
+                        "evidence_quotes": [
+                            f"Claimed Identity: {claimed or 'Institution'}",
+                            f"Originating Number: {caller_intel.national_format or phone}"
+                        ],
+                        "timestamp": time.time()
+                    })
 
             elif msg_type == "stop":
                 if len(session.turns) == 0 and len(session.audio_buffer) >= 4000:

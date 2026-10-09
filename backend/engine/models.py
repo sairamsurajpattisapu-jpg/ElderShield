@@ -97,3 +97,27 @@ class DemoScenario(BaseModel):
     description: str
     turns: List[ConversationTurn]
     raw_transcript: str
+
+class CallerLookupRequest(BaseModel):
+    phone_number: str
+    claimed_organization: Optional[str] = None
+    country_hint: Optional[str] = "IN"
+
+class CallerIntelligenceResult(BaseModel):
+    raw_input: str
+    is_valid: bool
+    e164_format: Optional[str] = None
+    national_format: Optional[str] = None
+    country_code: Optional[str] = None
+    carrier: Optional[str] = None
+    geographic_region: Optional[str] = None
+    number_type: Literal["MOBILE", "FIXED_LINE", "TOLL_FREE", "VOIP", "PREMIUM_RATE", "SPECIAL", "UNKNOWN"]
+    is_registered_institution: bool = False
+    registered_organization: Optional[str] = None
+    official_helplines: List[str] = Field(default_factory=list)
+    spoofing_suspected: bool = False
+    spoofing_conflict_details: Optional[str] = None
+    reputation_score: float = Field(default=50.0, ge=0, le=100)
+    verdict: Literal["VERIFIED_INSTITUTION", "NORMAL_PERSONAL", "SPOOF_CONFLICT", "HIGH_RISK_SUSPECT", "INVALID_FORMAT"]
+    advisory: str
+

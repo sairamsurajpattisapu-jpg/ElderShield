@@ -13,9 +13,11 @@ import {
   Clock,
   Activity,
   FileAudio,
+  UserCheck,
+  ShieldCheck,
 } from 'lucide-react';
-import type { RiskAssessment, RiskLevel, LiveRiskUpdate, LiveWarning } from '../types';
-import { getLiveCallWsUrl, analyzeAudioFile, analyzeConversation, analyzeProgression } from '../api';
+import type { RiskAssessment, RiskLevel, LiveRiskUpdate, LiveWarning, CallerIntelligenceResult } from '../types';
+import { getLiveCallWsUrl, analyzeAudioFile, analyzeConversation, analyzeProgression, lookupCallerIdentity } from '../api';
 import { playRiskAlert } from '../utils/audioAlert';
 
 // Browser Web Speech API interface declaration for TypeScript
@@ -130,6 +132,55 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
   // Latest full assessment result from this session
   const [finalAssessment, setFinalAssessment] = useState<RiskAssessment | null>(null);
+
+  // Caller verification state
+  const [callerPhone, setCallerPhone] = useState<string>('');
+  const [claimedOrg, setClaimedOrg] = useState<string>('');
+  const [callerIntel, setCallerIntel] = useState<CallerIntelligenceResult | null>(null);
+  const [isLookingUpCaller, setIsLookingUpCaller] = useState<boolean>(false);
+
+  // Handle caller verification
+  const handleVerifyCaller = async (phoneToVerify?: string, orgToVerify?: string) => {
+    const num = phoneToVerify !== undefined ? phoneToVerify : callerPhone;
+    const org = orgToVerify !== undefined ? orgToVerify : claimedOrg;
+    if (!num.trim()) return;
+
+    setIsLookingUpCaller(true);
+    try {
+      const result = await lookupCallerIdentity(num, org);
+      setCallerIntel(result);
+
+      // Send caller_info to WebSocket if connected
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'caller_info',
+          phone_number: num,
+          claimed_organization: org || undefined
+        }));
+      }
+
+      if (result.spoofing_suspected) {
+        setActiveWarning({
+          type: 'warning',
+          severity: 'CRITICAL',
+          title: 'IDENTITY SPOOFING CONFLICT DETECTED',
+          message: result.advisory,
+          evidence_quotes: [
+            `Caller claimed: ${org || 'Official Institution'}`,
+            `Actual Origin: ${result.national_format || num} (${result.number_type} line)`
+          ],
+          timestamp: Date.now()
+        });
+        if (soundAlertsEnabled) {
+          playRiskAlert('HIGH_RISK');
+        }
+      }
+    } catch (e) {
+      console.warn('Caller lookup error:', e);
+    } finally {
+      setIsLookingUpCaller(false);
+    }
+  };
 
   // References
   const wsRef = useRef<WebSocket | null>(null);
@@ -257,6 +308,8 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
             if (soundAlertsEnabled) {
               playRiskAlert('HIGH_RISK');
             }
+          } else if (data.type === 'caller_intelligence') {
+            setCallerIntel(data.caller_data as CallerIntelligenceResult);
           } else if (data.type === 'session_summary') {
             // Received final summary
           }
@@ -1047,6 +1100,229 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                 fontWeight: 600,
               }}>
                 {audioUploadFeedback}
+              </div>
+            )}
+          </div>
+
+          {/* Caller Identity & Institutional Spoofing Verification Card */}
+          <div style={{
+            backgroundColor: 'var(--bg-surface)',
+            border: callerIntel?.spoofing_suspected ? '1.5px solid var(--risk-high)' : '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '22px',
+            boxShadow: callerIntel?.spoofing_suspected ? '0 0 16px rgba(239, 68, 68, 0.2)' : 'none',
+          }}>
+            <h3 style={{
+              fontSize: '1.05rem',
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              marginBottom: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}>
+              <UserCheck size={18} color="var(--accent-cyan)" />
+              <span>Caller Identity & Spoof Verification</span>
+            </h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+              Telecom circle mapping, ITU normalization, and official institutional conflict checks.
+            </p>
+
+            {/* Inputs */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                  Incoming Caller Phone Number:
+                </label>
+                <input
+                  type="text"
+                  value={callerPhone}
+                  onChange={(e) => setCallerPhone(e.target.value)}
+                  placeholder="+91 98490 12345 or 1800 1234"
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    backgroundColor: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                  Claimed Organization (Optional):
+                </label>
+                <input
+                  type="text"
+                  value={claimedOrg}
+                  onChange={(e) => setClaimedOrg(e.target.value)}
+                  placeholder="e.g. State Bank of India, CBI, Courier"
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    backgroundColor: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <button
+                onClick={() => handleVerifyCaller()}
+                disabled={isLookingUpCaller || !callerPhone.trim()}
+                style={{
+                  padding: '9px 16px',
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--accent-cyan)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--accent-cyan)',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: (isLookingUpCaller || !callerPhone.trim()) ? 'not-allowed' : 'pointer',
+                  opacity: (isLookingUpCaller || !callerPhone.trim()) ? 0.5 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                <ShieldCheck size={16} />
+                <span>{isLookingUpCaller ? 'Checking Telecom Registries...' : 'Verify Caller Number'}</span>
+              </button>
+            </div>
+
+            {/* Quick Test Preset Buttons */}
+            <div style={{ marginBottom: '14px' }}>
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                Test Scenarios:
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <button
+                  onClick={() => {
+                    setCallerPhone('+91 98490 12345');
+                    setClaimedOrg('State Bank of India');
+                    handleVerifyCaller('+91 98490 12345', 'State Bank of India');
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid var(--risk-high-border)',
+                    borderRadius: '4px',
+                    color: '#fca5a5',
+                    fontSize: '0.72rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ⚠️ Spoof Mobile (SBI Claim)
+                </button>
+
+                <button
+                  onClick={() => {
+                    setCallerPhone('1800 1234');
+                    setClaimedOrg('State Bank of India');
+                    handleVerifyCaller('1800 1234', 'State Bank of India');
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid var(--risk-low-border)',
+                    borderRadius: '4px',
+                    color: '#6ee7b7',
+                    fontSize: '0.72rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  🛡️ SBI Official Toll-Free
+                </button>
+
+                <button
+                  onClick={() => {
+                    setCallerPhone('1930');
+                    setClaimedOrg('National Cybercrime');
+                    handleVerifyCaller('1930', 'National Cybercrime');
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                    border: '1px solid var(--accent-cyan)',
+                    borderRadius: '4px',
+                    color: 'var(--accent-cyan)',
+                    fontSize: '0.72rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  📞 Cyber Helpline 1930
+                </button>
+              </div>
+            </div>
+
+            {/* Caller Intelligence Result Badge & Details */}
+            {callerIntel && (
+              <div style={{
+                padding: '12px 14px',
+                backgroundColor: callerIntel.spoofing_suspected
+                  ? 'rgba(239, 68, 68, 0.16)'
+                  : callerIntel.verdict === 'VERIFIED_INSTITUTION'
+                  ? 'rgba(16, 185, 129, 0.15)'
+                  : 'var(--bg-surface-elevated)',
+                border: `1px solid ${
+                  callerIntel.spoofing_suspected
+                    ? 'var(--risk-high-border)'
+                    : callerIntel.verdict === 'VERIFIED_INSTITUTION'
+                    ? 'var(--risk-low-border)'
+                    : 'var(--border-subtle)'
+                }`,
+                borderRadius: 'var(--radius-md)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {callerIntel.national_format || callerIntel.raw_input}
+                  </span>
+                  <span style={{
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    backgroundColor: callerIntel.spoofing_suspected
+                      ? 'var(--risk-high)'
+                      : callerIntel.verdict === 'VERIFIED_INSTITUTION'
+                      ? 'var(--risk-low)'
+                      : 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                  }}>
+                    {callerIntel.verdict.replace('_', ' ')}
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <span>📡 {callerIntel.carrier || 'Telecom'}</span>
+                  <span>📍 {callerIntel.geographic_region || 'India'}</span>
+                  <span>🏷️ {callerIntel.number_type} line</span>
+                </div>
+
+                {callerIntel.registered_organization && (
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-teal)', marginBottom: '4px' }}>
+                    Registered Entity: {callerIntel.registered_organization}
+                  </div>
+                )}
+
+                <div style={{
+                  fontSize: '0.8rem',
+                  color: callerIntel.spoofing_suspected ? '#fca5a5' : 'var(--text-primary)',
+                  fontWeight: callerIntel.spoofing_suspected ? 700 : 400,
+                  marginTop: '6px',
+                  lineHeight: 1.4,
+                }}>
+                  {callerIntel.advisory}
+                </div>
               </div>
             )}
           </div>

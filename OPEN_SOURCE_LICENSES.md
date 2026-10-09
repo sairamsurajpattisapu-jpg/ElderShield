@@ -18,6 +18,7 @@ ElderShield is built on open-source libraries and pretrained models under permis
 | **Web Audio API** | W3C Standard (Browser Native) | Standard | Client-side synthesizers generating accessible high-contrast frequency alerts and real-time microphone VU level meters. |
 | **Web Speech API** | W3C Community (Browser Native) | Standard | Zero-latency browser speech recognition client providing sub-second streaming transcripts for English, Hindi, and Telugu. |
 | **React & Vite** | [facebook/react](https://github.com/facebook/react) / [vitejs/vite](https://github.com/vitejs/vite) | MIT License | Senior-accessible reactive user interface with sub-millisecond client state updates and hot reloading. |
+| **phonenumbers** | [daviddrysdale/python-phonenumbers](https://github.com/daviddrysdale/python-phonenumbers) | Apache-2.0 | Google's libphonenumber Python port for E.164 normalization, carrier resolution, telecom circle geocoding, and institutional spoofing conflict detection. |
 | **Lucide Icons** | [lucide-icons/lucide](https://github.com/lucide-icons/lucide) | ISC License | High-contrast, WCAG 2.1-compliant accessibility iconography. |
 
 ---

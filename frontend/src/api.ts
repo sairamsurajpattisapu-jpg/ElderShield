@@ -1,4 +1,4 @@
-import type { RiskAssessment, ProgressionResponse, DemoScenario, AudioAnalysisResponse } from './types';
+import type { RiskAssessment, ProgressionResponse, DemoScenario, AudioAnalysisResponse, CallerIntelligenceResult } from './types';
 
 // Support VITE_API_BASE_URL environment variable, falling back to empty string for relative proxy
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -92,3 +92,23 @@ export async function fetchRecentAnalyses(limit = 15): Promise<RiskAssessment[]>
   if (!res.ok) throw new Error('Failed to retrieve recent session evaluations');
   return res.json();
 }
+
+export async function lookupCallerIdentity(
+  phoneNumber: string,
+  claimedOrganization?: string
+): Promise<CallerIntelligenceResult> {
+  const res = await fetch(`${API_BASE}/api/caller-lookup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      phone_number: phoneNumber,
+      claimed_organization: claimedOrganization || undefined,
+      country_hint: 'IN',
+    }),
+  });
+  if (!res.ok) {
+    throw new Error('Caller intelligence lookup failed');
+  }
+  return res.json();
+}
+

@@ -154,3 +154,23 @@ export interface LiveSessionSummary {
   audio_bytes_buffered: number;
 }
 
+export interface CallerIntelligenceResult {
+  raw_input: string;
+  is_valid: boolean;
+  e164_format?: string;
+  national_format?: string;
+  country_code?: string;
+  carrier?: string;
+  geographic_region?: string;
+  number_type: 'MOBILE' | 'FIXED_LINE' | 'TOLL_FREE' | 'VOIP' | 'PREMIUM_RATE' | 'SPECIAL' | 'UNKNOWN';
+  is_registered_institution: boolean;
+  registered_organization?: string;
+  official_helplines: string[];
+  spoofing_suspected: boolean;
+  spoofing_conflict_details?: string;
+  reputation_score: number;
+  verdict: 'VERIFIED_INSTITUTION' | 'NORMAL_PERSONAL' | 'SPOOF_CONFLICT' | 'HIGH_RISK_SUSPECT' | 'INVALID_FORMAT';
+  advisory: string;
+}
+
+

@@ -108,6 +108,19 @@ def run_e2e_verification():
         assert ack["type"] == "chunk_ack"
         print(f"  Audio Chunk Handling Verified (Chunk 1 ACK, buffered bytes: {ack['buffered_bytes']})")
 
+        # Caller intelligence check over WebSocket
+        ws.send_json({
+            "type": "caller_info",
+            "phone_number": "+91 98490 12345",
+            "claimed_organization": "State Bank of India"
+        })
+        intel_msg = ws.receive_json()
+        assert intel_msg["type"] == "caller_intelligence"
+        assert intel_msg["caller_data"]["verdict"] == "SPOOF_CONFLICT"
+        spoof_warn = ws.receive_json()
+        assert spoof_warn["type"] == "warning"
+        print(f"  Caller Intelligence Verified: Spoofing Conflict Caught for {intel_msg['caller_data']['national_format']}")
+
         # Turn 1: Initial introduction (Safe / Insufficient)
         ws.send_json({
             "type": "transcript_segment",

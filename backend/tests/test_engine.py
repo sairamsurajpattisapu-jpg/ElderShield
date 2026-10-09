@@ -189,3 +189,70 @@ def test_audio_upload_endpoint():
     assert "risk_assessment" in data
     assert data["risk_assessment"]["risk_level"] in ["LOW_RISK", "INSUFFICIENT_EVIDENCE", "SUSPICIOUS", "HIGH_RISK"]
 
+def test_caller_intelligence_lookup():
+    """
+    Test POST /api/caller-lookup across verified institutional numbers,
+    spoofing conflicts, and invalid formats.
+    """
+    # 1. Verified institutional toll-free
+    res_sbi = client.post("/api/caller-lookup", json={"phone_number": "18001234", "claimed_organization": "SBI"})
+    assert res_sbi.status_code == 200
+    data_sbi = res_sbi.json()
+    assert data_sbi["is_valid"] is True
+    assert data_sbi["verdict"] == "VERIFIED_INSTITUTION"
+    assert "State Bank of India" in data_sbi["registered_organization"]
+    assert data_sbi["spoofing_suspected"] is False
+
+    # 2. Spoofing conflict: Mobile claiming to represent SBI
+    res_spoof = client.post(
+        "/api/caller-lookup",
+        json={"phone_number": "+91 98490 12345", "claimed_organization": "State Bank of India"}
+    )
+    assert res_spoof.status_code == 200
+    data_spoof = res_spoof.json()
+    assert data_spoof["is_valid"] is True
+    assert data_spoof["number_type"] == "MOBILE"
+    assert data_spoof["verdict"] == "SPOOF_CONFLICT"
+    assert data_spoof["spoofing_suspected"] is True
+    assert "CRITICAL CONFLICT" in data_spoof["spoofing_conflict_details"]
+
+    # 3. National Cyber Crime Helpline
+    res_1930 = client.post("/api/caller-lookup", json={"phone_number": "1930"})
+    assert res_1930.status_code == 200
+    assert res_1930.json()["verdict"] == "VERIFIED_INSTITUTION"
+
+    # 4. Malformed / Invalid number
+    res_invalid = client.post("/api/caller-lookup", json={"phone_number": "abc-invalid"})
+    assert res_invalid.status_code == 200
+    assert res_invalid.json()["verdict"] == "INVALID_FORMAT"
+
+def test_websocket_caller_info_message():
+    """
+    Test streaming caller_info message over WebSocket /ws/live-call
+    and receiving immediate caller_intelligence and spoof warning events.
+    """
+    with client.websocket_connect("/ws/live-call") as ws:
+        ready = ws.receive_json()
+        assert ready["type"] == "session_ready"
+
+        # Send spoofed caller info
+        ws.send_json({
+            "type": "caller_info",
+            "phone_number": "+91 98490 12345",
+            "claimed_organization": "State Bank of India"
+        })
+
+        intel_msg = ws.receive_json()
+        assert intel_msg["type"] == "caller_intelligence"
+        assert intel_msg["caller_data"]["verdict"] == "SPOOF_CONFLICT"
+
+        # Immediate spoofing warning is delivered
+        warning_msg = ws.receive_json()
+        assert warning_msg["type"] == "warning"
+        assert warning_msg["title"] == "SPOOFED IDENTITY DETECTED"
+        assert warning_msg["severity"] == "CRITICAL"
+
+        ws.send_json({"type": "stop"})
+        assert ws.receive_json()["type"] == "session_summary"
+
+
