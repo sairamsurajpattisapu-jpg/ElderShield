@@ -156,6 +156,10 @@ async def analyze_audio_upload(
     if not audio_bytes or len(audio_bytes) < 100:
         raise HTTPException(status_code=400, detail="Invalid audio file or empty upload.")
 
+    MAX_AUDIO_BYTES = 25 * 1024 * 1024 # 25MB security limit
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio file exceeds maximum allowed limit of 25MB.")
+
     # 1. Transcribe audio with ASR service
     transcription = asr_service.transcribe_audio_bytes(
         audio_bytes=audio_bytes,
