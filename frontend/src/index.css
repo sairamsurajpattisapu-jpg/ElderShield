@@ -1,0 +1,99 @@
+:root {
+  --bg-primary: #080c16;
+  --bg-surface: #0f172a;
+  --bg-surface-elevated: #162036;
+  --bg-surface-hover: #1e293b;
+  --border-subtle: #24324d;
+  --border-prominent: #384d75;
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  
+  --accent-cyan: #06b6d4;
+  --accent-teal: #14b8a6;
+  --accent-cyan-glow: rgba(6, 182, 212, 0.15);
+  
+  --risk-low: #10b981;
+  --risk-low-bg: rgba(16, 185, 129, 0.12);
+  --risk-low-border: #059669;
+  
+  --risk-suspicious: #f59e0b;
+  --risk-suspicious-bg: rgba(245, 158, 11, 0.12);
+  --risk-suspicious-border: #d97706;
+  
+  --risk-high: #ef4444;
+  --risk-high-bg: rgba(239, 68, 68, 0.14);
+  --risk-high-border: #dc2626;
+  
+  --risk-uncertain: #94a3b8;
+  --risk-uncertain-bg: rgba(148, 163, 184, 0.12);
+  --risk-uncertain-border: #64748b;
+
+  --font-base: 16px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+body.font-large {
+  --font-base: 18px;
+}
+
+body.font-xlarge {
+  --font-base: 20px;
+}
+
+body.high-contrast {
+  --bg-primary: #000000;
+  --bg-surface: #0a0f1d;
+  --bg-surface-elevated: #141c2e;
+  --border-subtle: #475569;
+  --border-prominent: #94a3b8;
+  --text-primary: #ffffff;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  font-size: var(--font-base);
+  line-height: 1.5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+textarea, input {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-prominent);
+}
