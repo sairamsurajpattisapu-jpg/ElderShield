@@ -15,9 +15,9 @@ PATTERNS_IMPERSONATION = {
         r"\b(?:bank\s+nunchi\s+call|bank\s+se\s+bol\s+raha|bank\s+officer\s+ni)\b"
     ],
     "LAW_ENFORCEMENT_GOVT": [
-        r"\b(?:from|officer\s+from|calling\s+from)\s+(?:police|cbi|ed|enforcement\s+directorate|customs|cyber\s+crime|cyber\s+cell|trai|narcotics)\b",
+        r"\b(?:from|officer\s+from|calling\s+from)\s+(?:police|cbi|central\s+bureau\s+of\s+investigation|ed|enforcement\s+directorate|customs|cyber\s+crime|cyber\s+cell|trai|narcotics)\b",
         r"\b(?:dsp|sub\s+inspector|commissioner|inspector)\s+[\w\s]+(?:calling|from)\b",
-        r"\b(digital\s+arrest|arrest\s+warrant|case\s+registered|parcel\s+seized|contraband|drugs\s+found|supreme\s+court\s+order)\b",
+        r"\b(central\s+bureau\s+of\s+investigation|digital\s+arrest|arrest\s+warrant|case\s+registered|parcel\s+seized|contraband|drugs\s+found|supreme\s+court\s+order)\b",
         r"(पुलिस|सीबीआई|कस्टम्स|साइबर\s+क्राइम|डिजिटल\s+अरेस्ट|गिरफ्तारी|वारंट)",
         r"(పోలీస్|సిబిఐ|కస్టమ్స్|సైబర్\s+క్రైమ్|డిజిటల్\s+అరెస్ట్|వారెంట్|కేసు\s+నమోదు)",
         r"\b(police\s+case|digital\s+arrest|warrant\s+issue|customs\s+lo\s+pattukunnaru|parcel\s+lo\s+drugs)\b"
@@ -38,7 +38,7 @@ PATTERNS_IMPERSONATION = {
 }
 
 PATTERNS_URGENCY_INTIMIDATION = [
-    r"\b(?:within\s+(?:5|10|15|30)\s+minutes|power\s+will\s+be\s+cut|disconnect\s+tonight|power\s+cut\s+at\s+\d+)\b",
+    r"\b(?:within\s+(?:5|10|15|30)\s+minutes|power\s+will\s+be\s+cut|disconnect\s+tonight|power\s+cut\s+at\s+\d+|digital\s+arrest|under\s+digital\s+arrest)\b",
     r"\b(?:account\s+(?:blocked|suspended|frozen)\s+today|immediate\s+custody|police\s+on\s+the\s+way|police\s+lu\s+vasthunnaru)\b",
     r"\b(?:last\s+chance|before\s+disconnection|will\s+face\s+immediate\s+custody|arrest\s+warrant\s+issued|legal\s+notice\s+immediately)\b",
     r"(तुरंत\s+कीजिए|10\s+मिनट\s+में|आज\s+रात\s+बिजली\s+कट|अकाउंट\s+फ्रीज|जेल\s+होगी|गिरफ्तारी\s+होगी|आखिरी\s+मौका)",
@@ -47,9 +47,9 @@ PATTERNS_URGENCY_INTIMIDATION = [
 ]
 
 PATTERNS_SECRECY_ISOLATION = [
-    r"\b(?:do\s+not\s+tell\s+(?:anyone|family|children|son|daughter|wife|husband)|don't\s+tell\s+anyone)\b",
+    r"\b(?:do\s+not\s+(?:tell|inform)\s+(?:anyone|family|children|your\s+family|son|daughter|wife|husband)|don't\s+(?:tell|inform)\s+anyone)\b",
     r"\b(?:keep\s+this\s+(?:confidential|secret|strictly\s+between\s+us))\b",
-    r"\b(?:do\s+not\s+disconnect\s+the\s+call|stay\s+on\s+the\s+line|stay\s+on\s+the\s+video\s+call|stay\s+in\s+a\s+closed\s+room|isolate\s+yourself)\b",
+    r"\b(?:do\s+not\s+disconnect\s+(?:the|this)\s+call|stay\s+on\s+the\s+line|stay\s+on\s+the\s+video\s+call|stay\s+in\s+a\s+closed\s+room|isolate\s+yourself)\b",
     r"(किसी\s+को\s+मत\s+बताना|घर\s+वालों\s+को\s+मत\s+बताओ|फोन\s+मत\s+काटना|गोपनीय\s+रखें|अकेले\s+कमरे\s+में)",
     r"(ఎవరికీ\s+చెప్పకండి|పిల్లలకు\s+చెప్పొద్దు|రహస్యంగా\s+ఉంచండి|కాల్\s+కట్\s+చేయొద్దు|ఒంటరిగా\s+గదిలో)",
     r"\b(kisi\s+ko\s+mat\s+batana|ghar\s+pe\s+mat\s+batao|evariki\s+cheppakandi|phone\s+pettaddu|call\s+cut\s+cheyoddu|line\s+lo\s+undandi)\b"
@@ -66,7 +66,7 @@ PATTERNS_CREDENTIAL_REQUEST = [
 ]
 
 PATTERNS_FINANCIAL_TRANSFER = [
-    r"\b(?:transfer|send)\s+(?:your\s+savings|funds|money|\d+\s*(?:rupees|rs|inr)?|rs|inr|₹)\s+to\s+(?:the|our|a)?\s*(?:rbi|safety|clearing|verification|government)\s+(?:verification\s+)?account\b",
+    r"\b(?:transfer|send)\s+(?:your\s+savings|funds|money|[\d,]+\s*(?:rupees|rs|inr)?|rs|inr|₹)\s+to\s+(?:the|our|a)?\s*(?:rbi|safety|clearing|verification|government|escrow)?\s*(?:verification\s+|escrow\s+)?account\b",
     r"\b(?:clear\s+the\s+[\w\s₹\d]+\s+bill\s+before\s+disconnection|pay\s+(?:via\s+)?(?:gpay|google\s+pay|phonepe|paytm|upi)\s+right\s+now)\b",
     r"\b(?:send\s+(?:rs|inr|₹)?\s*\d+\s+to\s+verify|transfer\s+all\s+funds\s+temporarily)\b",
     r"(सुरक्षित\s+खाते\s+में\s+भेजें|आरबीआई\s+खाते\s+में\s+ट्रांसफर|पैसे\s+तुरंत\s+भेजें|पैसे\s+जमा\s+करें)",
