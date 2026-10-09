@@ -124,3 +124,68 @@ def test_api_analyze_progression_endpoint():
     assert len(data["turns"]) == 3
     assert data["final_risk_level"] == "HIGH_RISK"
     assert data["decision"] == "BLOCK"
+
+def test_live_call_websocket_pipeline():
+    """
+    Test real-time WebSocket /ws/live-call stream:
+    1. Connect and verify session_ready handshake
+    2. Stream predatory transcript segments
+    3. Verify live risk_update and critical warning push
+    4. Send stop and receive session_summary
+    """
+    with client.websocket_connect("/ws/live-call") as ws:
+        ready_msg = ws.receive_json()
+        assert ready_msg["type"] == "session_ready"
+        assert "session_id" in ready_msg
+
+        # Turn 1: Caller impersonation
+        ws.send_json({
+            "type": "transcript_segment",
+            "speaker": "Caller",
+            "text": "This is Officer Sharma from Central Bureau of Investigation.",
+            "is_final": True
+        })
+        msg1 = ws.receive_json()
+        assert msg1["type"] == "risk_update"
+        assert msg1["risk_level"] in ["LOW_RISK", "SUSPICIOUS", "INSUFFICIENT_EVIDENCE"]
+
+        # Turn 2: Urgency & credential extraction (triggers warning)
+        ws.send_json({
+            "type": "transcript_segment",
+            "speaker": "Caller",
+            "text": "You are under digital arrest. Transfer 80000 rupees to our RBI verification account immediately or police will arrest you.",
+            "is_final": True
+        })
+        msg2 = ws.receive_json()
+        assert msg2["type"] == "risk_update"
+        assert msg2["risk_level"] == "HIGH_RISK"
+
+        # Warning is delivered immediately
+        warning_msg = ws.receive_json()
+        assert warning_msg["type"] == "warning"
+        assert warning_msg["severity"] == "CRITICAL"
+        assert "evidence_quotes" in warning_msg
+
+        # Stop session cleanly
+        ws.send_json({"type": "stop"})
+        summary_msg = ws.receive_json()
+        assert summary_msg["type"] == "session_summary"
+        assert summary_msg["summary"]["final_risk_level"] == "HIGH_RISK"
+
+def test_audio_upload_endpoint():
+    """
+    Test POST /api/analyze/audio endpoint with audio payload.
+    """
+    import io
+    fake_wav_data = b"RIFF" + b"\x00" * 200 # Minimal test payload
+    res = client.post(
+        "/api/analyze/audio",
+        files={"file": ("test.wav", io.BytesIO(fake_wav_data), "audio/wav")}
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "audio_metrics" in data
+    assert "transcript" in data
+    assert "risk_assessment" in data
+    assert data["risk_assessment"]["risk_level"] in ["LOW_RISK", "INSUFFICIENT_EVIDENCE", "SUSPICIOUS", "HIGH_RISK"]
+

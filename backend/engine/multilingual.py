@@ -66,7 +66,7 @@ PATTERNS_CREDENTIAL_REQUEST = [
 ]
 
 PATTERNS_FINANCIAL_TRANSFER = [
-    r"\b(?:transfer|send)\s+(?:your\s+savings|funds|money|\d+|rs|inr|₹)\s+to\s+(?:the\s+)?(?:rbi|safety|clearing|verification|government)\s+account\b",
+    r"\b(?:transfer|send)\s+(?:your\s+savings|funds|money|\d+\s*(?:rupees|rs|inr)?|rs|inr|₹)\s+to\s+(?:the|our|a)?\s*(?:rbi|safety|clearing|verification|government)\s+(?:verification\s+)?account\b",
     r"\b(?:clear\s+the\s+[\w\s₹\d]+\s+bill\s+before\s+disconnection|pay\s+(?:via\s+)?(?:gpay|google\s+pay|phonepe|paytm|upi)\s+right\s+now)\b",
     r"\b(?:send\s+(?:rs|inr|₹)?\s*\d+\s+to\s+verify|transfer\s+all\s+funds\s+temporarily)\b",
     r"(सुरक्षित\s+खाते\s+में\s+भेजें|आरबीआई\s+खाते\s+में\s+ट्रांसफर|पैसे\s+तुरंत\s+भेजें|पैसे\s+जमा\s+करें)",

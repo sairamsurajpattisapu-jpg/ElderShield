@@ -270,6 +270,32 @@ async def live_call_websocket(websocket: WebSocket):
                         })
 
             elif msg_type == "stop":
+                if len(session.turns) == 0 and len(session.audio_buffer) >= 4000:
+                    assessment = session.transcribe_buffered_audio()
+                    if assessment:
+                        await websocket.send_json({
+                            "type": "risk_update",
+                            "session_id": session.session_id,
+                            "turn_number": len(session.turns),
+                            "speaker": "Caller",
+                            "text": session.turns[-1].text if session.turns else "",
+                            "risk_level": assessment.risk_level,
+                            "risk_score": assessment.risk_score,
+                            "decision": assessment.decision,
+                            "reasons": assessment.reasons,
+                            "is_final": True,
+                            "timestamp": time.time()
+                        })
+                        if assessment.risk_level == "HIGH_RISK":
+                            await websocket.send_json({
+                                "type": "warning",
+                                "severity": "CRITICAL",
+                                "title": "URGENT FRAUD ALERT",
+                                "message": assessment.recommended_action,
+                                "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
+                                "timestamp": time.time()
+                            })
+
                 summary = session.get_summary_stats()
                 await websocket.send_json({
                     "type": "session_summary",

@@ -63,6 +63,27 @@ class LiveCallSession:
         self.last_assessment = assessment
         return assessment
 
+    def transcribe_buffered_audio(self) -> Optional[RiskAssessment]:
+        """
+        Transcribes the accumulated audio buffer using faster-whisper with Silero VAD.
+        Appends discovered dialogue turns and returns updated risk assessment.
+        """
+        if len(self.audio_buffer) < 4000:
+            return None
+
+        try:
+            transcription = asr_service.transcribe_audio_bytes(
+                audio_bytes=bytes(self.audio_buffer),
+                filename="stream.webm",
+                language_hint=self.language_hint
+            )
+            text = transcription.get("transcript", "").strip()
+            if text:
+                return self.add_transcript_segment(speaker="Caller", text=text)
+        except Exception as e:
+            print(f"[LiveCallSession] Buffered audio transcription note: {e}")
+        return None
+
     def get_summary_stats(self) -> Dict[str, Any]:
         duration = round(time.time() - self.start_time, 2)
         return {
