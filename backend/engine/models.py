@@ -121,11 +121,14 @@ class CallerIntelligenceResult(BaseModel):
     is_registered_institution: bool = False
     registered_organization: Optional[str] = None
     official_helplines: List[str] = Field(default_factory=list)
+    official_url: Optional[str] = None
     identity_conflict_status: Literal["VERIFIED_MATCH", "POTENTIAL_IDENTITY_CONFLICT", "NO_CONFLICT_UNVERIFIED", "UNKNOWN"] = "UNKNOWN"
     spoofing_suspected: bool = False
     spoofing_conflict_details: Optional[str] = None
     reputation_score: float = Field(default=50.0, ge=0, le=100)
     verdict: Literal["VERIFIED_INSTITUTION", "NORMAL_PERSONAL", "POTENTIAL_IDENTITY_CONFLICT", "SPOOF_CONFLICT", "HIGH_RISK_SUSPECT", "INVALID_FORMAT"]
     advisory: str
+    evidence_source: str = "ITU E.164 + Google phonenumbers + National Official Institutional Registry v2.2"
+    lookup_timestamp: Optional[str] = None
 
 

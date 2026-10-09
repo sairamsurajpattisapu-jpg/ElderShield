@@ -273,16 +273,19 @@ async def live_call_websocket(websocket: WebSocket):
                         "timestamp": time.time()
                     })
 
-                    # If HIGH RISK detected, deliver immediate prominent warning
+                    # If HIGH RISK detected, deliver immediate prominent warning (deduplicated by evidence fingerprint)
                     if assessment.risk_level == "HIGH_RISK":
-                        await websocket.send_json({
-                            "type": "warning",
-                            "severity": "CRITICAL",
-                            "title": "URGENT FRAUD ALERT",
-                            "message": assessment.recommended_action,
-                            "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
-                            "timestamp": time.time()
-                        })
+                        warning_fp = f"HIGH_RISK:{':'.join(sorted([ev.exact_quote for ev in assessment.evidence[:3]]))}"
+                        if session.last_warning_fingerprint != warning_fp:
+                            session.last_warning_fingerprint = warning_fp
+                            await websocket.send_json({
+                                "type": "warning",
+                                "severity": "CRITICAL",
+                                "title": "URGENT FRAUD ALERT",
+                                "message": assessment.recommended_action,
+                                "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
+                                "timestamp": time.time()
+                            })
 
             elif msg_type == "caller_info":
                 phone = data.get("phone_number", "")

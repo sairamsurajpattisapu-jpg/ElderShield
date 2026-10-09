@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 import phonenumbers
 from phonenumbers import geocoder, carrier, PhoneNumberType
@@ -48,6 +49,48 @@ OFFICIAL_INSTITUTIONAL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "display_name": "State Electricity Distribution Corporation (DISCOM)",
         "official_url": "https://apeasternpower.com",
         "advisory": "Power distribution companies send written bill notices; they do not instruct customers to download APKs."
+    },
+    "HDFC BANK": {
+        "aliases": ["hdfc", "hdfc bank", "hdfc credit card"],
+        "official_numbers": ["18002026161", "18001600", "18002664332"],
+        "display_name": "HDFC Bank Limited",
+        "official_url": "https://hdfcbank.com",
+        "advisory": "HDFC Bank never asks for NetBanking passwords, OTPs, or CVV numbers over the phone."
+    },
+    "ICICI BANK": {
+        "aliases": ["icici", "icici bank", "icici direct"],
+        "official_numbers": ["18001080", "18002008989"],
+        "display_name": "ICICI Bank Limited",
+        "official_url": "https://icicibank.com",
+        "advisory": "ICICI Bank will never call to ask for debit card grid values or OTP verification."
+    },
+    "AXIS BANK": {
+        "aliases": ["axis", "axis bank"],
+        "official_numbers": ["18004195959", "18001035577"],
+        "display_name": "Axis Bank",
+        "official_url": "https://axisbank.com",
+        "advisory": "Axis Bank never contacts customers asking to install remote access applications."
+    },
+    "PUNJAB NATIONAL BANK": {
+        "aliases": ["pnb", "punjab national bank"],
+        "official_numbers": ["18001802222", "18001032222"],
+        "display_name": "Punjab National Bank (PNB)",
+        "official_url": "https://pnbindia.in",
+        "advisory": "PNB official representatives do not conduct security verification from personal numbers."
+    },
+    "INDIA POST PAYMENTS BANK": {
+        "aliases": ["ippb", "india post", "post office bank"],
+        "official_numbers": ["155299", "18008899860"],
+        "display_name": "India Post Payments Bank (IPPB)",
+        "official_url": "https://ippbonline.com",
+        "advisory": "India Post will never call asking for biometric authorization or OTPs."
+    },
+    "EPFO PENSION HELPLINE": {
+        "aliases": ["epfo", "pension", "provident fund", "jeevan pramaan"],
+        "official_numbers": ["1800115354", "14470"],
+        "display_name": "Employees' Provident Fund Organisation (EPFO)",
+        "official_url": "https://epfindia.gov.in",
+        "advisory": "EPFO does not mandate phone transfers to process Jeevan Pramaan life certificates."
     },
     "POLICE EMERGENCY": {
         "aliases": ["police", "emergency", "112", "100"],
@@ -100,10 +143,15 @@ class CallerIntelligenceService:
                         is_registered_institution=True,
                         registered_organization=org_data["display_name"],
                         official_helplines=org_data["official_numbers"],
+                        official_url=org_data.get("official_url"),
+                        identity_conflict_status="VERIFIED_MATCH",
+                        verified_caller_identity=org_data["display_name"],
                         spoofing_suspected=False,
                         reputation_score=5.0, # Highly safe
                         verdict="VERIFIED_INSTITUTION",
-                        advisory=f"Verified official contact channel for {org_data['display_name']}."
+                        advisory=f"Verified official contact channel for {org_data['display_name']}.",
+                        lookup_timestamp=datetime.utcnow().isoformat() + "Z",
+                        evidence_source="Official Government Short Code Registry v2.2"
                     )
 
         # Parse standard phone number with Google phonenumbers library
@@ -242,12 +290,15 @@ class CallerIntelligenceService:
             is_registered_institution=is_registered,
             registered_organization=reg_org_name,
             official_helplines=official_helplines,
+            official_url=matched_inst.get("official_url") if matched_inst else None,
             identity_conflict_status=conflict_status, # type: ignore
             spoofing_suspected=spoofing_suspected,
             spoofing_conflict_details=conflict_details,
             reputation_score=reputation_score,
             verdict=verdict, # type: ignore
-            advisory=advisory
+            advisory=advisory,
+            evidence_source="ITU E.164 + Google phonenumbers + National Official Institutional Registry v2.2",
+            lookup_timestamp=datetime.utcnow().isoformat() + "Z"
         )
 
 caller_service = CallerIntelligenceService()

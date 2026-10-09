@@ -162,15 +162,22 @@ export interface CallerIntelligenceResult {
   country_code?: string;
   carrier?: string;
   geographic_region?: string;
+  metadata_disclaimer?: string;
   number_type: 'MOBILE' | 'FIXED_LINE' | 'TOLL_FREE' | 'VOIP' | 'PREMIUM_RATE' | 'SPECIAL' | 'UNKNOWN';
+  claimed_organization?: string;
+  verified_caller_identity?: string;
   is_registered_institution: boolean;
   registered_organization?: string;
   official_helplines: string[];
+  official_url?: string;
+  identity_conflict_status?: 'VERIFIED_MATCH' | 'POTENTIAL_IDENTITY_CONFLICT' | 'NO_CONFLICT_UNVERIFIED' | 'UNKNOWN';
   spoofing_suspected: boolean;
   spoofing_conflict_details?: string;
   reputation_score: number;
-  verdict: 'VERIFIED_INSTITUTION' | 'NORMAL_PERSONAL' | 'SPOOF_CONFLICT' | 'HIGH_RISK_SUSPECT' | 'INVALID_FORMAT';
+  verdict: 'VERIFIED_INSTITUTION' | 'NORMAL_PERSONAL' | 'POTENTIAL_IDENTITY_CONFLICT' | 'SPOOF_CONFLICT' | 'HIGH_RISK_SUSPECT' | 'INVALID_FORMAT';
   advisory: string;
+  evidence_source?: string;
+  lookup_timestamp?: string;
 }
 
 

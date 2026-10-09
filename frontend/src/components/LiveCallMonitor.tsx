@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   PhoneCall,
   Play,
+  Pause,
   RotateCcw,
   Sparkles,
   ArrowRight,
@@ -133,6 +134,32 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   // Latest full assessment result from this session
   const [finalAssessment, setFinalAssessment] = useState<RiskAssessment | null>(null);
 
+  // Pause and Audible Alert States
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const isPausedRef = useRef<boolean>(false);
+  const lastWarningFingerprintRef = useRef<string>('');
+
+  // Senior-friendly audible announcement with speech synthesis
+  const announceAudibleWarning = (title: string, message: string) => {
+    if (!soundAlertsEnabled) return;
+    const fingerprint = `${title}:${message}`;
+    if (lastWarningFingerprintRef.current === fingerprint) return;
+    lastWarningFingerprintRef.current = fingerprint;
+
+    playRiskAlert('HIGH_RISK');
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance('ElderShield Alert: Potential scam call detected. Do not share one-time passwords or transfer money.');
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
   // Caller verification state
   const [callerPhone, setCallerPhone] = useState<string>('');
   const [claimedOrg, setClaimedOrg] = useState<string>('');
@@ -171,15 +198,48 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
           ],
           timestamp: Date.now()
         });
-        if (soundAlertsEnabled) {
-          playRiskAlert('HIGH_RISK');
-        }
+        announceAudibleWarning('IDENTITY SPOOFING CONFLICT DETECTED', result.advisory);
       }
     } catch (e) {
       console.warn('Caller lookup error:', e);
     } finally {
       setIsLookingUpCaller(false);
     }
+  };
+
+  const togglePauseMonitoring = () => {
+    if (!isMonitoring) return;
+    const nextPaused = !isPaused;
+    setIsPaused(nextPaused);
+    isPausedRef.current = nextPaused;
+
+    if (nextPaused) {
+      if (speechRecognizerRef.current) {
+        try { speechRecognizerRef.current.stop(); } catch { /* ignore */ }
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.pause(); } catch { /* ignore */ }
+      }
+    } else {
+      if (speechRecognizerRef.current) {
+        try { speechRecognizerRef.current.start(); } catch { /* ignore */ }
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
+        try { mediaRecorderRef.current.resume(); } catch { /* ignore */ }
+      }
+    }
+  };
+
+  const handleResetSession = () => {
+    stopLiveMonitoring();
+    setTurns([]);
+    setCurrentScore(0);
+    setCurrentRiskLevel('LOW_RISK');
+    setActiveWarning(null);
+    setFinalAssessment(null);
+    setCallerIntel(null);
+    setSessionDuration(0);
+    lastWarningFingerprintRef.current = '';
   };
 
   // References
@@ -300,14 +360,12 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
             });
 
             if (soundAlertsEnabled && update.risk_level === 'HIGH_RISK') {
-              playRiskAlert('HIGH_RISK');
+              announceAudibleWarning('HIGH RISK FRAUD DETECTED', update.reasons[0] || 'Urgent scam activity detected.');
             }
           } else if (data.type === 'warning') {
             const warning = data as LiveWarning;
             setActiveWarning(warning);
-            if (soundAlertsEnabled) {
-              playRiskAlert('HIGH_RISK');
-            }
+            announceAudibleWarning(warning.title, warning.message);
           } else if (data.type === 'caller_intelligence') {
             setCallerIntel(data.caller_data as CallerIntelligenceResult);
           } else if (data.type === 'session_summary') {
@@ -340,6 +398,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
         let currentTurnCounter = 1;
 
         recognition.onresult = (evt: SpeechRecognitionEventLike) => {
+          if (isPausedRef.current) return;
           for (let i = evt.resultIndex; i < evt.results.length; i++) {
             const res = evt.results[i];
             const transcriptText = res[0].transcript.trim();
@@ -735,16 +794,34 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                 Live Call Scam Monitor
               </h2>
               <span style={{
-                fontSize: '0.72rem',
-                fontWeight: 700,
+                fontSize: '0.74rem',
+                fontWeight: 800,
                 textTransform: 'uppercase',
-                padding: '3px 8px',
-                borderRadius: '4px',
-                backgroundColor: isMonitoring ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.15)',
-                color: isMonitoring ? '#fca5a5' : '#6ee7b7',
-                border: `1px solid ${isMonitoring ? 'var(--risk-high-border)' : 'var(--risk-low-border)'}`,
+                padding: '4px 10px',
+                borderRadius: '6px',
+                backgroundColor: isMonitoring
+                  ? (isPaused ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)')
+                  : isSimulating
+                  ? 'rgba(168, 85, 247, 0.2)'
+                  : 'rgba(16, 185, 129, 0.15)',
+                color: isMonitoring
+                  ? (isPaused ? '#fcd34d' : '#fca5a5')
+                  : isSimulating
+                  ? '#d8b4fe'
+                  : '#6ee7b7',
+                border: `1.5px solid ${
+                  isMonitoring
+                    ? (isPaused ? 'var(--risk-suspicious-border)' : 'var(--risk-high-border)')
+                    : isSimulating
+                    ? 'rgba(168, 85, 247, 0.5)'
+                    : 'var(--risk-low-border)'
+                }`,
               }}>
-                {isMonitoring ? '🔴 LIVE STREAM ACTIVE' : isSimulating ? 'SIMULATION IN PROGRESS' : 'STANDBY'}
+                {isMonitoring
+                  ? (isPaused ? '⏸️ LIVE CALL PAUSED' : '🔴 LIVE CALL (REAL-TIME AUDIO MONITORING)')
+                  : isSimulating
+                  ? '🟣 DEMO SIMULATION (SCRIPTED SCENARIO)'
+                  : '⚪ STANDBY (READY TO LISTEN)'}
               </span>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
@@ -994,56 +1071,125 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
               </div>
             )}
 
-            {/* Primary Action Button */}
+            {/* Primary Action Button Group */}
             {!isMonitoring ? (
-              <button
-                onClick={startLiveMonitoring}
-                disabled={isSimulating || isUploadingAudio}
-                style={{
-                  width: '100%',
-                  padding: '13px 20px',
-                  backgroundColor: 'var(--accent-cyan)',
-                  border: 'none',
-                  borderRadius: 'var(--radius-md)',
-                  color: '#080c16',
-                  fontWeight: 800,
-                  fontSize: '1rem',
-                  cursor: (isSimulating || isUploadingAudio) ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  boxShadow: '0 4px 14px rgba(6, 182, 212, 0.3)',
-                  transition: 'all 0.15s ease',
-                  opacity: (isSimulating || isUploadingAudio) ? 0.5 : 1,
-                }}
-              >
-                <Mic size={20} />
-                <span>Start Live Microphone Protection</span>
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button
+                  onClick={startLiveMonitoring}
+                  disabled={isSimulating || isUploadingAudio}
+                  style={{
+                    width: '100%',
+                    padding: '13px 20px',
+                    backgroundColor: 'var(--accent-cyan)',
+                    border: 'none',
+                    borderRadius: 'var(--radius-md)',
+                    color: '#080c16',
+                    fontWeight: 800,
+                    fontSize: '1rem',
+                    cursor: (isSimulating || isUploadingAudio) ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    boxShadow: '0 4px 14px rgba(6, 182, 212, 0.3)',
+                    transition: 'all 0.15s ease',
+                    opacity: (isSimulating || isUploadingAudio) ? 0.5 : 1,
+                  }}
+                >
+                  <Mic size={20} />
+                  <span>Start Live Microphone Protection</span>
+                </button>
+                {turns.length > 0 && (
+                  <button
+                    onClick={handleResetSession}
+                    style={{
+                      width: '100%',
+                      padding: '9px 16px',
+                      backgroundColor: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--text-secondary)',
+                      fontWeight: 700,
+                      fontSize: '0.86rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <RotateCcw size={16} />
+                    <span>Reset Dialogue & Start Fresh Call</span>
+                  </button>
+                )}
+              </div>
             ) : (
-              <button
-                onClick={stopLiveMonitoring}
-                style={{
-                  width: '100%',
-                  padding: '13px 20px',
-                  backgroundColor: 'var(--risk-high)',
-                  border: 'none',
-                  borderRadius: 'var(--radius-md)',
-                  color: '#ffffff',
-                  fontWeight: 800,
-                  fontSize: '1rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)',
-                }}
-              >
-                <MicOff size={20} />
-                <span>Stop Live Call Protection</span>
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button
+                  onClick={stopLiveMonitoring}
+                  style={{
+                    width: '100%',
+                    padding: '13px 20px',
+                    backgroundColor: 'var(--risk-high)',
+                    border: 'none',
+                    borderRadius: 'var(--radius-md)',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    fontSize: '1rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)',
+                  }}
+                >
+                  <MicOff size={20} />
+                  <span>Stop Live Call Protection</span>
+                </button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    onClick={togglePauseMonitoring}
+                    style={{
+                      padding: '9px 14px',
+                      backgroundColor: isPaused ? 'rgba(16, 185, 129, 0.18)' : 'rgba(245, 158, 11, 0.18)',
+                      border: `1px solid ${isPaused ? 'var(--risk-low-border)' : 'var(--risk-suspicious-border)'}`,
+                      borderRadius: 'var(--radius-md)',
+                      color: isPaused ? '#6ee7b7' : '#fcd34d',
+                      fontWeight: 700,
+                      fontSize: '0.86rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    {isPaused ? <Play size={16} /> : <Pause size={16} />}
+                    <span>{isPaused ? 'Resume Audio' : 'Pause Audio'}</span>
+                  </button>
+                  <button
+                    onClick={handleResetSession}
+                    style={{
+                      padding: '9px 14px',
+                      backgroundColor: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--text-secondary)',
+                      fontWeight: 700,
+                      fontSize: '0.86rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <RotateCcw size={16} />
+                    <span>Reset Call</span>
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Divider */}
@@ -1302,26 +1448,120 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
                   </span>
                 </div>
 
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <span>📡 {callerIntel.carrier || 'Telecom'}</span>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <span>📡 {callerIntel.carrier || 'National Carrier'}</span>
                   <span>📍 {callerIntel.geographic_region || 'India'}</span>
                   <span>🏷️ {callerIntel.number_type} line</span>
+                  {callerIntel.lookup_timestamp && (
+                    <span>⏱️ {new Date(callerIntel.lookup_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  )}
                 </div>
 
-                {callerIntel.registered_organization && (
-                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-teal)', marginBottom: '4px' }}>
+                {/* Claimed vs Verified Identity Comparison */}
+                {callerIntel.claimed_organization && (
+                  <div style={{
+                    padding: '8px 10px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                    borderRadius: 'var(--radius-sm)',
+                    marginBottom: '8px',
+                    fontSize: '0.8rem',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Claimed Identity:</span>
+                      <span style={{ fontWeight: 700, color: '#f8fafc' }}>{callerIntel.claimed_organization}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Verified Identity:</span>
+                      <span style={{
+                        fontWeight: 700,
+                        color: callerIntel.verified_caller_identity ? 'var(--accent-teal)' : '#f87171'
+                      }}>
+                        {callerIntel.verified_caller_identity || 'Unverified Personal Mobile'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {callerIntel.registered_organization && !callerIntel.claimed_organization && (
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-teal)', marginBottom: '6px' }}>
                     Registered Entity: {callerIntel.registered_organization}
                   </div>
                 )}
 
+                {/* Advisory / Warning Notice */}
                 <div style={{
-                  fontSize: '0.8rem',
+                  fontSize: '0.82rem',
                   color: callerIntel.spoofing_suspected ? '#fca5a5' : 'var(--text-primary)',
                   fontWeight: callerIntel.spoofing_suspected ? 700 : 400,
                   marginTop: '6px',
+                  marginBottom: '10px',
                   lineHeight: 1.4,
                 }}>
                   {callerIntel.advisory}
+                </div>
+
+                {/* Official Helplines for Manual Senior Verification */}
+                {callerIntel.official_helplines && callerIntel.official_helplines.length > 0 && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px 10px',
+                    backgroundColor: 'rgba(6, 182, 212, 0.08)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid rgba(6, 182, 212, 0.2)',
+                  }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', marginBottom: '4px' }}>
+                      Official Helpline for Manual Verification:
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {callerIntel.official_helplines.slice(0, 3).map((num, i) => (
+                        <a
+                          key={i}
+                          href={`tel:${num}`}
+                          style={{
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            color: '#ffffff',
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          📞 {num}
+                        </a>
+                      ))}
+                      {callerIntel.official_url && (
+                        <a
+                          href={callerIntel.official_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            fontSize: '0.78rem',
+                            color: 'var(--accent-cyan)',
+                            padding: '3px 8px',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          Official Website ↗
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Metadata Disclaimer & Evidence Source */}
+                <div style={{
+                  fontSize: '0.7rem',
+                  color: 'var(--text-muted)',
+                  marginTop: '10px',
+                  lineHeight: 1.3,
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                  paddingTop: '6px',
+                }}>
+                  ℹ️ {callerIntel.metadata_disclaimer || 'Carrier and circle metadata reflect national ITU numbering allocations.'}
+                  <div style={{ marginTop: '2px', fontStyle: 'italic' }}>
+                    Source: {callerIntel.evidence_source || 'ITU E.164 + Google phonenumbers v9.0.41'}
+                  </div>
                 </div>
               </div>
             )}
