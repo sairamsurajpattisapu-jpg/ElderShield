@@ -3,6 +3,7 @@ import json
 import time
 import base64
 import uuid
+import asyncio
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 
@@ -519,16 +520,16 @@ async def live_call_websocket(
 
     app_logger.info(f"WebSocket session established: {session.session_id}")
 
-    # Initial ready handshake
-    await websocket.send_json({
-        "type": "session_ready",
-        "session_id": session.session_id,
-        "status": "connected",
-        "asr_ready": asr_service.is_engine_ready,
-        "timestamp": time.time()
-    })
-
     try:
+        # Initial ready handshake
+        await websocket.send_json({
+            "type": "session_ready",
+            "session_id": session.session_id,
+            "status": "connected",
+            "asr_ready": asr_service.is_engine_ready,
+            "timestamp": time.time()
+        })
+
         while True:
             raw_msg = await websocket.receive_text()
             data = json.loads(raw_msg)
@@ -541,17 +542,22 @@ async def live_call_websocket(
                 seq = data.get("sequence_id", 0)
                 chunk_b64 = data.get("chunk", "")
                 client_capture_time_ms = data.get("client_capture_time_ms") or data.get("client_time_ms")
-                
+
                 live_result = None
                 if chunk_b64:
                     try:
                         chunk_bytes = base64.b64decode(chunk_b64)
+                        if seq % 10 == 1:
+                            app_logger.info(f"[{session.session_id}] audio_chunk #{seq} size={len(chunk_bytes)} total_buffer={len(session.audio_buffer)}")
                         if len(chunk_bytes) <= 1024 * 1024:
-                            live_result = session.process_live_audio_chunk(
-                                chunk_bytes, seq, client_capture_time_ms=client_capture_time_ms
+                            live_result = await asyncio.to_thread(
+                                session.process_live_audio_chunk,
+                                chunk_bytes,
+                                seq,
+                                client_capture_time_ms
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        app_logger.error(f"[{session.session_id}] audio_chunk error: {e}")
 
                 await websocket.send_json({
                     "type": "chunk_ack",
@@ -561,6 +567,7 @@ async def live_call_websocket(
 
                 if live_result:
                     assessment, text, timing = live_result
+                    app_logger.info(f"[{session.session_id}] ASR turn recognized: '{text}' (risk: {assessment.risk_level}, score: {assessment.risk_score})")
                     await websocket.send_json({
                         "type": "risk_update",
                         "session_id": session.session_id,
@@ -633,6 +640,7 @@ async def live_call_websocket(
                 text = data.get("text", "")
                 is_final = data.get("is_final", True)
                 client_turn_start_ms = data.get("client_turn_start_ms")
+                app_logger.info(f"[{session.session_id}] transcript_segment received from client: '{text}' (speaker={speaker}, is_final={is_final})")
 
                 t_analysis_start = time.perf_counter()
                 assessment = session.add_transcript_segment(speaker=speaker, text=text, is_final=is_final)
@@ -737,31 +745,80 @@ async def live_call_websocket(
                     })
 
             elif msg_type == "stop":
-                if len(session.turns) == 0 and len(session.audio_buffer) >= 4000:
-                    assessment = session.transcribe_buffered_audio()
-                    if assessment:
+                prev_turn_count = len(session.turns)
+                prev_text = session.turns[-1].text if session.turns else ""
+                assessment = await asyncio.to_thread(session.transcribe_buffered_audio)
+                curr_text = session.turns[-1].text if session.turns else ""
+
+                if assessment and (len(session.turns) > prev_turn_count or curr_text != prev_text):
+                    last_turn = session.turns[-1]
+                    timing = {
+                        "server_receipt_to_transcript_ms": 0,
+                        "transcript_to_risk_decision_ms": 0,
+                        "total_server_turn_to_alert_ms": 0,
+                        "audio_duration_seconds": round(len(session.audio_buffer) / 32000.0, 2),
+                        "real_time_factor": 0.0,
+                        "client_capture_time_ms": int(time.time() * 1000),
+                        "turn_number": len(session.turns)
+                    }
+                    await websocket.send_json({
+                        "type": "risk_update",
+                        "session_id": session.session_id,
+                        "turn_number": len(session.turns),
+                        "speaker": last_turn.speaker,
+                        "text": last_turn.text,
+                        "risk_level": assessment.risk_level,
+                        "risk_score": assessment.risk_score,
+                        "decision": assessment.decision,
+                        "reasons": assessment.reasons,
+                        "is_final": True,
+                        "timing": timing,
+                        "timestamp": time.time(),
+                        "otp_state": assessment.otp_state,
+                        "otp_disclosure_risk": assessment.otp_disclosure_risk,
+                        "urgent_intervention_required": assessment.urgent_intervention_required,
+                        "intervention_heading": assessment.intervention_heading,
+                        "intervention_spoken_text": assessment.intervention_spoken_text,
+                        "event_id": assessment.event_id
+                    })
+                    if assessment.urgent_intervention_required:
                         await websocket.send_json({
-                            "type": "risk_update",
+                            "type": "otp_intervention",
+                            "event_id": assessment.event_id or str(uuid.uuid4()),
                             "session_id": session.session_id,
-                            "turn_number": len(session.turns),
-                            "speaker": "Caller",
-                            "text": session.turns[-1].text if session.turns else "",
-                            "risk_level": assessment.risk_level,
-                            "risk_score": assessment.risk_score,
-                            "decision": assessment.decision,
-                            "reasons": assessment.reasons,
-                            "is_final": True,
+                            "otp_state": assessment.otp_state,
+                            "heading": assessment.intervention_heading or "STOP! DO NOT SHARE YOUR OTP",
+                            "message": assessment.recommended_action,
+                            "spoken_text": assessment.intervention_spoken_text or assessment.recommended_action,
+                            "language": assessment.intervention_language or "en",
+                            "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:3]],
+                            "timing": timing,
                             "timestamp": time.time()
                         })
-                        if assessment.risk_level == "HIGH_RISK":
-                            await websocket.send_json({
-                                "type": "warning",
-                                "severity": "CRITICAL",
-                                "title": "URGENT FRAUD ALERT",
-                                "message": assessment.recommended_action,
-                                "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
-                                "timestamp": time.time()
-                            })
+                        await websocket.send_json({
+                            "type": "warning",
+                            "severity": "CRITICAL",
+                            "title": assessment.intervention_heading or "STOP! DO NOT SHARE YOUR OTP",
+                            "message": assessment.recommended_action,
+                            "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
+                            "timing": timing,
+                            "timestamp": time.time(),
+                            "event_id": assessment.event_id,
+                            "otp_state": assessment.otp_state,
+                            "spoken_text": assessment.intervention_spoken_text
+                        })
+                    elif assessment.risk_level == "HIGH_RISK":
+                        await websocket.send_json({
+                            "type": "warning",
+                            "severity": "CRITICAL",
+                            "title": "URGENT FRAUD ALERT",
+                            "message": assessment.recommended_action,
+                            "evidence_quotes": [ev.exact_quote for ev in assessment.evidence[:2]],
+                            "timing": timing,
+                            "timestamp": time.time(),
+                            "event_id": assessment.event_id,
+                            "otp_state": assessment.otp_state
+                        })
 
                 summary = session.get_summary_stats()
                 await websocket.send_json({

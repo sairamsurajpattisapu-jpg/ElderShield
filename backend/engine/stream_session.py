@@ -32,7 +32,7 @@ class LiveCallSession:
         self.last_warning_fingerprint: Optional[str] = None
         self.is_active = True
         self.unprocessed_offset = 0
-        self.min_chunk_bytes_to_transcribe = 32000 * 2 # ~2.0 seconds of 16kHz 16-bit PCM
+        self.min_chunk_bytes_to_transcribe = int(32000 * 1.5) # ~1.5 seconds of 16kHz 16-bit PCM
         self.last_segment_was_interim = False
 
     def add_audio_chunk(self, chunk_bytes: bytes, seq: int) -> int:
@@ -73,10 +73,14 @@ class LiveCallSession:
         
         raw_text = asr_res.get("transcript", "").strip()
         if not raw_text or "initializing in background" in raw_text or raw_text == "Audio segment processed.":
+            # Silence detected: advance offset keeping 0.5s overlap to avoid repeating ASR on silent buffer
+            overlap_bytes = 32000 * 0.5
+            self.unprocessed_offset = max(0, len(self.audio_buffer) - int(overlap_bytes))
             return None
 
-        # Advance processed offset to prevent duplicate re-transcription
-        self.unprocessed_offset = len(self.audio_buffer)
+        # Advance processed offset with 0.5s overlap context
+        overlap_bytes = 32000 * 0.5
+        self.unprocessed_offset = max(0, len(self.audio_buffer) - int(overlap_bytes))
 
         # Run behavioral scam analysis
         t_analysis_start = time.perf_counter()
@@ -164,21 +168,24 @@ class LiveCallSession:
         Transcribes accumulated audio buffer using faster-whisper with Silero VAD.
         Appends discovered dialogue turns and returns updated risk assessment.
         """
-        if len(self.audio_buffer) < 4000:
-            return None
+        start_offset = max(0, self.unprocessed_offset - 16000)
+        target_audio = bytes(self.audio_buffer[start_offset:]) if start_offset < len(self.audio_buffer) else bytes(self.audio_buffer)
+        if len(target_audio) < 4000:
+            return self.last_assessment
 
         try:
             transcription = asr_service.transcribe_audio_bytes(
-                audio_bytes=bytes(self.audio_buffer),
-                filename="stream.webm",
+                audio_bytes=target_audio,
+                filename="buffer.pcm",
                 language_hint=self.language_hint
             )
             text = transcription.get("transcript", "").strip()
-            if text:
+            if text and "initializing in background" not in text and text != "Audio segment processed.":
+                self.unprocessed_offset = len(self.audio_buffer)
                 return self.add_transcript_segment(speaker="Caller", text=text, is_final=True)
         except Exception as e:
             print(f"[LiveCallSession] Buffered audio transcription note: {e}")
-        return None
+        return self.last_assessment
 
     def clear_memory(self):
         """

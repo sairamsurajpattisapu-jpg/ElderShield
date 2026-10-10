@@ -4,151 +4,281 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_screen"
-    android:padding="20dp">
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="36dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_title"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:textColor="@color/text_primary"
-            android:layout_marginBottom="20dp" />
-
-        <!-- Connection Settings Card -->
+        <!-- Header Row with Back Button -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:layout_marginBottom="22dp">
+
+            <ImageButton
+                android:id="@+id/btnBackSettings"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/bg_pill_neutral"
+                android:contentDescription="Back"
+                android:padding="9dp"
+                android:src="@android:drawable/ic_menu_revert"
+                app:tint="@color/text_primary" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/manrope"
+                    android:text="@string/settings_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/inter"
+                    android:text="Elder security parameters &amp; privacy governance"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 1. Server Connection Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
             android:background="@drawable/bg_elder_card"
-            android:padding="16dp"
-            android:layout_marginBottom="16dp">
+            android:orientation="vertical"
+            android:padding="20dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ElderShield Server Connection"
-                android:textSize="17sp"
-                android:textStyle="bold"
+                android:fontFamily="@font/manrope"
+                android:text="ElderShield Security Server"
                 android:textColor="@color/text_primary"
-                android:layout_marginBottom="12dp" />
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="14dp"
+                android:fontFamily="@font/inter"
+                android:text="Configure backend endpoint for live WebSocket fraud detection."
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                app:boxBackgroundMode="outline">
+                app:boxBackgroundMode="outline"
+                app:boxCornerRadiusBottomEnd="12dp"
+                app:boxCornerRadiusBottomStart="12dp"
+                app:boxCornerRadiusTopEnd="12dp"
+                app:boxCornerRadiusTopStart="12dp"
+                app:boxStrokeColor="@color/primary"
+                app:hintTextColor="@color/primary">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etServerUrl"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="52dp"
+                    android:fontFamily="@font/inter"
                     android:hint="@string/pref_server_url"
+                    android:inputType="textUri"
                     android:text="http://10.0.2.2:8000"
-                    android:inputType="textUri" />
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:boxBackgroundMode="outline">
+                app:boxBackgroundMode="outline"
+                app:boxCornerRadiusBottomEnd="12dp"
+                app:boxCornerRadiusBottomStart="12dp"
+                app:boxCornerRadiusTopEnd="12dp"
+                app:boxCornerRadiusTopStart="12dp"
+                app:boxStrokeColor="@color/primary"
+                app:hintTextColor="@color/primary">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etApiKey"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="52dp"
+                    android:fontFamily="@font/inter"
                     android:hint="@string/pref_api_key"
-                    android:inputType="textPassword" />
+                    android:inputType="textPassword"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
             </com.google.android.material.textfield.TextInputLayout>
         </LinearLayout>
 
-        <!-- Alert Preferences Card -->
+        <!-- 2. Accessible Alerts Card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:layout_marginBottom="16dp"
             android:background="@drawable/bg_elder_card"
-            android:padding="16dp"
-            android:layout_marginBottom="16dp">
+            android:orientation="vertical"
+            android:padding="20dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Accessible Alerts"
-                android:textSize="17sp"
-                android:textStyle="bold"
+                android:fontFamily="@font/manrope"
+                android:text="Senior Alert Preferences"
                 android:textColor="@color/text_primary"
-                android:layout_marginBottom="12dp" />
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="12dp"
+                android:fontFamily="@font/inter"
+                android:text="Customize sensory alert feedback when scam tactics are detected."
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
 
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/switchVibrate"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/pref_vibrate_alerts"
-                android:textSize="16sp"
                 android:checked="true"
-                android:paddingVertical="8dp" />
+                android:fontFamily="@font/inter"
+                android:paddingVertical="10dp"
+                android:text="@string/pref_vibrate_alerts"
+                android:textColor="@color/text_primary"
+                android:textSize="15.5sp"
+                app:thumbTint="@color/primary"
+                app:trackTint="@color/soft_blue_accent" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/subtle_dividers" />
 
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/switchSound"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/pref_sound_alerts"
-                android:textSize="16sp"
                 android:checked="true"
-                android:paddingVertical="8dp" />
+                android:fontFamily="@font/inter"
+                android:paddingVertical="10dp"
+                android:text="@string/pref_sound_alerts"
+                android:textColor="@color/text_primary"
+                android:textSize="15.5sp"
+                app:thumbTint="@color/primary"
+                app:trackTint="@color/soft_blue_accent" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/subtle_dividers" />
 
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/switchCallScreening"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/pref_call_screening"
-                android:textSize="16sp"
                 android:checked="true"
-                android:paddingVertical="8dp" />
+                android:fontFamily="@font/inter"
+                android:paddingVertical="10dp"
+                android:text="@string/pref_call_screening"
+                android:textColor="@color/text_primary"
+                android:textSize="15.5sp"
+                app:thumbTint="@color/primary"
+                app:trackTint="@color/soft_blue_accent" />
         </LinearLayout>
 
-        <!-- Privacy & Zero-Retention Notice Card -->
+        <!-- 3. Acoustic Capture & Privacy Card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:layout_marginBottom="22dp"
             android:background="@drawable/bg_elder_card"
-            android:padding="16dp"
-            android:layout_marginBottom="24dp">
+            android:orientation="vertical"
+            android:padding="20dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:fontFamily="@font/manrope"
                 android:text="@string/privacy_title"
+                android:textColor="@color/text_primary"
                 android:textSize="17sp"
-                android:textStyle="bold"
-                android:textColor="@color/accent"
-                android:layout_marginBottom="8dp" />
+                android:textStyle="bold" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:fontFamily="@font/inter"
+                android:lineSpacingExtra="3.5dp"
                 android:text="@string/privacy_description"
-                android:textSize="15sp"
                 android:textColor="@color/text_secondary"
-                android:lineSpacingExtra="3dp" />
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_pill_soft_blue"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="8dp">
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:contentDescription="Speakerphone icon"
+                    android:src="@drawable/ic_info"
+                    app:tint="@color/primary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:fontFamily="@font/inter"
+                    android:text="Speakerphone mode enables acoustic capture without raw cellular line tapping."
+                    android:textColor="@color/primary"
+                    android:textSize="12.5sp" />
+            </LinearLayout>
         </LinearLayout>
 
+        <!-- 4. Save Settings Button -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSaveSettings"
             android:layout_width="match_parent"
             android:layout_height="56dp"
+            android:backgroundTint="@color/primary_action"
+            android:fontFamily="@font/inter"
             android:text="SAVE SETTINGS"
+            android:textColor="@color/text_white"
             android:textSize="17sp"
             android:textStyle="bold"
-            app:cornerRadius="12dp"
-            android:backgroundTint="@color/primary" />
+            app:cornerRadius="14dp"
+            app:elevation="0dp" />
 
     </LinearLayout>
 </ScrollView>

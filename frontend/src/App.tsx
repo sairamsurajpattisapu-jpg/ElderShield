@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import type { NavTab } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { DashboardOverview } from './components/DashboardOverview';
+import { LiveCallMonitor } from './components/LiveCallMonitor';
+import { CallerLookupView } from './components/CallerLookupView';
 import { DemoScenarioSelector } from './components/DemoScenarioSelector';
 import { AnalysisInput } from './components/AnalysisInput';
 import { RiskOverviewCard } from './components/RiskOverviewCard';
@@ -10,17 +13,17 @@ import { EvidenceFindings } from './components/EvidenceFindings';
 import { ProtectionRecommendations } from './components/ProtectionRecommendations';
 import { RecentAnalysesDrawer } from './components/RecentAnalysesDrawer';
 import { SettingsView } from './components/SettingsView';
-import { LiveCallMonitor } from './components/LiveCallMonitor';
 
 import {
   fetchDemoScenarios,
   fetchRecentAnalyses,
+  fetchReadyStatus,
   analyzeConversation,
   analyzeProgression,
 } from './api';
 import type { DemoScenario, RiskAssessment, UserPreferences, ProgressionResponse } from './types';
 import { playRiskAlert } from './utils/audioAlert';
-import { AlertCircle, ArrowLeft } from 'lucide-react';
+import { AlertCircle, ArrowLeft, History } from 'lucide-react';
 
 const PREFS_STORAGE_KEY = 'eldershield_user_prefs_v1';
 const HISTORY_STORAGE_KEY = 'eldershield_local_history_v1';
@@ -28,6 +31,11 @@ const HISTORY_STORAGE_KEY = 'eldershield_local_history_v1';
 export const App: React.FC = () => {
   // Navigation tab state
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
+
+  // Backend telemetry state
+  const [isBackendHealthy, setIsBackendHealthy] = useState<boolean>(false);
+  const [activeSessionsCount, setActiveSessionsCount] = useState<number>(0);
 
   // User preferences & accessibility state
   const [preferences, setPreferences] = useState<UserPreferences>(() => {
@@ -41,7 +49,7 @@ export const App: React.FC = () => {
       fontSize: 'normal',
       highContrast: false,
       soundAlerts: true,
-      saveHistoryLocally: false, // Privacy default: session only
+      saveHistoryLocally: false, // Default: zero-disk retention
     };
   });
 
@@ -64,7 +72,7 @@ export const App: React.FC = () => {
       try {
         localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(updated));
       } catch {
-        // storage quota
+        // quota
       }
       return updated;
     });
@@ -78,12 +86,26 @@ export const App: React.FC = () => {
     if (preferences.highContrast) document.body.classList.add('high-contrast');
   }, [preferences.fontSize, preferences.highContrast]);
 
+  // Telemetry check
+  const checkTelemetry = useCallback(async () => {
+    try {
+      const ready = await fetchReadyStatus();
+      setIsBackendHealthy(ready.status === 'ready' || ready.status === 'ok');
+      if (ready.services?.active_live_call_sessions !== undefined) {
+        setActiveSessionsCount(ready.services.active_live_call_sessions);
+      }
+    } catch {
+      setIsBackendHealthy(false);
+    }
+  }, []);
+
   // Initial data loading
   useEffect(() => {
     async function init() {
       try {
+        checkTelemetry();
         const [scenariosData, backendRecent] = await Promise.all([
-          fetchDemoScenarios(),
+          fetchDemoScenarios().catch(() => []),
           fetchRecentAnalyses(15).catch(() => []),
         ]);
         setScenarios(scenariosData);
@@ -96,7 +118,7 @@ export const App: React.FC = () => {
             if (savedLocal) {
               const parsed: RiskAssessment[] = JSON.parse(savedLocal);
               const map = new Map<string, RiskAssessment>();
-              [...parsed, ...backendRecent].forEach(item => map.set(item.id, item));
+              [...parsed, ...backendRecent].forEach((item) => map.set(item.id, item));
               combinedRecent = Array.from(map.values());
             }
           } catch {
@@ -114,11 +136,15 @@ export const App: React.FC = () => {
         }
       } catch (err) {
         console.error('Initialization error:', err);
-        setErrorMsg('Unable to connect to ElderShield detection service. Ensure the FastAPI backend is running on port 8000.');
+        setErrorMsg('Unable to connect to ElderShield detection service. Ensure FastAPI backend is running on 127.0.0.1:8000.');
       }
     }
     init();
-  }, [preferences.saveHistoryLocally]);
+
+    // Heartbeat every 20 seconds
+    const interval = setInterval(checkTelemetry, 20000);
+    return () => clearInterval(interval);
+  }, [preferences.saveHistoryLocally, checkTelemetry]);
 
   // Persist to local storage if user preference enabled
   const saveToLocalHistoryIfEnabled = (newAssessment: RiskAssessment) => {
@@ -126,7 +152,7 @@ export const App: React.FC = () => {
     try {
       const existing = localStorage.getItem(HISTORY_STORAGE_KEY);
       const parsed: RiskAssessment[] = existing ? JSON.parse(existing) : [];
-      const updated = [newAssessment, ...parsed.filter(p => p.id !== newAssessment.id)].slice(0, 30);
+      const updated = [newAssessment, ...parsed.filter((p) => p.id !== newAssessment.id)].slice(0, 30);
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
     } catch {
       // quota
@@ -139,7 +165,7 @@ export const App: React.FC = () => {
     } catch {
       // ignore
     }
-    setRecentAnalyses(prev => prev.filter(p => p.is_demo));
+    setRecentAnalyses((prev) => prev.filter((p) => p.is_demo));
   };
 
   // Run demo scenario
@@ -150,7 +176,6 @@ export const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // Execute both analyze and progression endpoints concurrently
       const [assessment, progression] = await Promise.all([
         analyzeConversation(sc.raw_transcript, sc.id),
         analyzeProgression(sc.raw_transcript, sc.id),
@@ -166,7 +191,6 @@ export const App: React.FC = () => {
         playRiskAlert(assessment.risk_level);
       }
 
-      // Switch to results tab
       setCurrentTab('results');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Analysis failed';
@@ -198,7 +222,6 @@ export const App: React.FC = () => {
         playRiskAlert(assessment.risk_level);
       }
 
-      // Switch to results tab
       setCurrentTab('results');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Analysis failed';
@@ -218,286 +241,359 @@ export const App: React.FC = () => {
   const currentDemo = scenarios.find((s) => s.id === selectedDemoId);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header with Navigation for all 6 required pages */}
-      <Header
+    <div className="app-layout">
+      {/* 1. Desktop & Mobile Responsive Sidebar */}
+      <Sidebar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
         hasActiveResult={Boolean(currentAnalysis)}
+        isOpenMobile={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        isBackendHealthy={isBackendHealthy}
+        activeSessionsCount={activeSessionsCount}
       />
 
-      {/* Main Content Area */}
-      <main style={{
-        maxWidth: '1280px',
-        margin: '0 auto',
-        padding: '28px 24px',
-        flex: 1,
-        width: '100%',
-      }}>
-        {/* Error notification banner if any */}
-        {errorMsg && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '14px 18px',
-            backgroundColor: 'rgba(239, 68, 68, 0.15)',
-            border: '1.5px solid #ef4444',
-            borderRadius: 'var(--radius-md)',
-            color: '#fca5a5',
-            marginBottom: '24px',
-          }}>
-            <AlertCircle size={20} color="#ef4444" />
-            <span style={{ fontSize: '0.92rem', fontWeight: 600 }}>{errorMsg}</span>
-          </div>
-        )}
+      {/* 2. Main Application Wrapper (offset by sidebar width on desktop) */}
+      <div className="main-wrapper">
+        {/* Header Bar */}
+        <Header
+          currentTab={currentTab}
+          onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
+          isBackendHealthy={isBackendHealthy}
+          hasActiveResult={Boolean(currentAnalysis)}
+          onSelectTab={setCurrentTab}
+        />
 
-        {/* PAGE 1: DASHBOARD */}
-        {currentTab === 'dashboard' && (
-          <div>
-            <DashboardOverview
-              recentAnalyses={recentAnalyses}
-              onStartNewAnalysis={() => setCurrentTab('analyze')}
-              onStartLiveMonitor={() => setCurrentTab('live')}
-              onExploreScenarios={() => {
-                const el = document.getElementById('demo-scenarios-section');
-                el?.scrollIntoView({ behavior: 'smooth' });
+        {/* Primary Content Container */}
+        <main
+          style={{
+            maxWidth: '1240px',
+            margin: '0 auto',
+            padding: '28px 24px 48px',
+            flex: 1,
+            width: '100%',
+          }}
+        >
+          {/* Error notification banner if any */}
+          {errorMsg && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '14px 18px',
+                backgroundColor: 'var(--risk-high-bg)',
+                border: '1px solid var(--risk-high-border)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--risk-high)',
+                marginBottom: '24px',
               }}
-            />
+            >
+              <AlertCircle size={20} color="var(--risk-high)" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{errorMsg}</span>
+            </div>
+          )}
 
-            <div id="demo-scenarios-section">
+          {/* PAGE 1: DASHBOARD OVERVIEW */}
+          {currentTab === 'dashboard' && (
+            <div>
+              <DashboardOverview
+                recentAnalyses={recentAnalyses}
+                onStartNewAnalysis={() => setCurrentTab('analyze')}
+                onStartLiveMonitor={() => setCurrentTab('live')}
+                onExploreScenarios={() => {
+                  const el = document.getElementById('demo-scenarios-section');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }}
+              />
+
+              <div id="demo-scenarios-section" style={{ marginTop: '28px' }}>
+                <DemoScenarioSelector
+                  scenarios={scenarios}
+                  selectedScenarioId={selectedDemoId}
+                  onSelectScenario={handleSelectScenario}
+                  isLoading={isLoading}
+                />
+              </div>
+
+              {currentAnalysis && (
+                <div style={{ marginTop: '28px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        color: 'var(--brand-primary)',
+                      }}
+                    >
+                      Latest Session Risk Determination
+                    </span>
+                    <button
+                      onClick={() => setCurrentTab('results')}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--brand-primary)',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      View Full Evidence Ledger →
+                    </button>
+                  </div>
+                  <RiskOverviewCard result={currentAnalysis} />
+                </div>
+              )}
+
+              <div style={{ marginTop: '28px' }}>
+                <RecentAnalysesDrawer
+                  recentList={recentAnalyses}
+                  onSelectAnalysis={(res) => {
+                    setCurrentAnalysis(res);
+                    setSelectedDemoId(res.demo_scenario_id || null);
+                    setTranscript(res.raw_transcript || '');
+                    setCurrentTab('results');
+                  }}
+                  activeId={currentAnalysis?.id}
+                  isRetainingHistory={preferences.saveHistoryLocally}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* PAGE 2: LIVE AUDIO MONITOR */}
+          {currentTab === 'live' && (
+            <div>
+              <LiveCallMonitor
+                onLoadFullAnalysis={(res) => {
+                  setCurrentAnalysis(res);
+                  setTranscript(res.raw_transcript || '');
+                  setSelectedDemoId(res.demo_scenario_id || null);
+                  setRecentAnalyses((prev) => [res, ...prev.filter((r) => r.id !== res.id)]);
+                  saveToLocalHistoryIfEnabled(res);
+                  setCurrentTab('results');
+                }}
+                soundAlertsEnabled={preferences.soundAlerts}
+                onOpenCallerLookup={() => setCurrentTab('caller')}
+              />
+            </div>
+          )}
+
+          {/* PAGE 3: CALLER INTELLIGENCE & SPOOF DEFENSE */}
+          {currentTab === 'caller' && (
+            <div>
+              <CallerLookupView />
+            </div>
+          )}
+
+          {/* PAGE 4: ANALYZE CONVERSATION */}
+          {currentTab === 'analyze' && (
+            <div>
+              <div style={{ marginBottom: '22px' }}>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Analyze Conversation Transcript
+                </h2>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Evaluate speech dialogues, transcripts, or uploaded calls against multi-vector behavioral fraud indicators.
+                </p>
+              </div>
+
               <DemoScenarioSelector
                 scenarios={scenarios}
                 selectedScenarioId={selectedDemoId}
                 onSelectScenario={handleSelectScenario}
                 isLoading={isLoading}
               />
-            </div>
 
-            {currentAnalysis && (
               <div style={{ marginTop: '24px' }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--accent-cyan)', marginBottom: '10px' }}>
-                  Latest Analysis Overview
+                <AnalysisInput
+                  transcript={transcript}
+                  setTranscript={setTranscript}
+                  onAnalyze={handleAnalyzeCustom}
+                  isLoading={isLoading}
+                  isDemoLoaded={Boolean(selectedDemoId)}
+                  demoScenarioTitle={currentDemo?.title}
+                  onResetToCustom={handleResetToCustom}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* PAGE 5: RISK RESULTS & EVIDENCE LEDGER */}
+          {currentTab === 'results' && currentAnalysis && (
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '22px',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Detailed Forensic Risk Assessment
+                  </h2>
+                  <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    Scan #{currentAnalysis.id} • Decision: <strong>{currentAnalysis.decision}</strong> • {currentAnalysis.timestamp}
+                  </p>
                 </div>
-                <RiskOverviewCard result={currentAnalysis} />
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    onClick={() => setCurrentTab('timeline')}
+                    className="btn-secondary"
+                    style={{ padding: '8px 14px', fontSize: '0.84rem' }}
+                  >
+                    <span>View Risk Velocity Timeline</span>
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentTab('analyze')}
+                    className="btn-primary"
+                    style={{ padding: '8px 14px', fontSize: '0.84rem' }}
+                  >
+                    <ArrowLeft size={15} />
+                    <span>Analyze Another Call</span>
+                  </button>
+                </div>
               </div>
-            )}
 
-            <RecentAnalysesDrawer
-              recentList={recentAnalyses}
-              onSelectAnalysis={(res) => {
-                setCurrentAnalysis(res);
-                setSelectedDemoId(res.demo_scenario_id || null);
-                setTranscript(res.raw_transcript || '');
-                setCurrentTab('results');
-              }}
-              activeId={currentAnalysis?.id}
-              isRetainingHistory={preferences.saveHistoryLocally}
-            />
-          </div>
-        )}
+              {/* 1. Risk Overview Card */}
+              <RiskOverviewCard result={currentAnalysis} />
 
-        {/* PAGE 2: LIVE CALL DETECTION */}
-        {currentTab === 'live' && (
-          <div>
-            <LiveCallMonitor
-              onLoadFullAnalysis={(res) => {
-                setCurrentAnalysis(res);
-                setTranscript(res.raw_transcript || '');
-                setSelectedDemoId(res.demo_scenario_id || null);
-                setRecentAnalyses((prev) => [res, ...prev.filter((r) => r.id !== res.id)]);
-                saveToLocalHistoryIfEnabled(res);
-                setCurrentTab('results');
-              }}
-              soundAlertsEnabled={preferences.soundAlerts}
-            />
-          </div>
-        )}
+              {/* 2. Deterministic Evidence Ledger */}
+              <EvidenceFindings evidence={currentAnalysis.evidence} />
 
-        {/* PAGE 3: ANALYZE CONVERSATION */}
-        {currentTab === 'analyze' && (
-          <div>
-            <div style={{ marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                Analyze Conversation Transcript
-              </h2>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                Paste or type any suspicious conversation to evaluate multi-vector behavioral fraud indicators.
-              </p>
+              {/* 3. Actionable Protection Recommendations */}
+              <ProtectionRecommendations result={currentAnalysis} />
             </div>
+          )}
 
-            <DemoScenarioSelector
-              scenarios={scenarios}
-              selectedScenarioId={selectedDemoId}
-              onSelectScenario={handleSelectScenario}
-              isLoading={isLoading}
-            />
-
-            <AnalysisInput
-              transcript={transcript}
-              setTranscript={setTranscript}
-              onAnalyze={handleAnalyzeCustom}
-              isLoading={isLoading}
-              isDemoLoaded={Boolean(selectedDemoId)}
-              demoScenarioTitle={currentDemo?.title}
-              onResetToCustom={handleResetToCustom}
-            />
-          </div>
-        )}
-
-        {/* PAGE 3: RISK RESULTS */}
-        {currentTab === 'results' && currentAnalysis && (
-          <div>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '20px',
-              flexWrap: 'wrap',
-              gap: '10px',
-            }}>
-              <div>
-                <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Detailed Risk Assessment & Evidence Ledger
-                </h2>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Scan #{currentAnalysis.id} • Decision: <strong>{currentAnalysis.decision}</strong> • {currentAnalysis.timestamp}
-                </p>
-              </div>
-
-              <button
-                onClick={() => setCurrentTab('analyze')}
+          {/* PAGE 6: RISK VELOCITY PROGRESSION TIMELINE */}
+          {currentTab === 'timeline' && currentAnalysis && (
+            <div>
+              <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 14px',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: 'var(--bg-surface-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-secondary)',
-                  fontSize: '0.86rem',
+                  justifyContent: 'space-between',
+                  marginBottom: '22px',
+                  flexWrap: 'wrap',
+                  gap: '12px',
                 }}
               >
-                <ArrowLeft size={15} />
-                <span>Analyze Another Conversation</span>
-              </button>
+                <div>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Turn-by-Turn Risk Velocity Timeline
+                  </h2>
+                  <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    Incremental risk acceleration measured across each conversational exchange (`/api/analyze/progression`).
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setCurrentTab('results')}
+                  className="btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '0.84rem' }}
+                >
+                  <ArrowLeft size={15} />
+                  <span>Return to Evidence Findings</span>
+                </button>
+              </div>
+
+              <ProgressiveTimeline progressions={activeProgression?.turns || currentAnalysis.turn_progression} />
             </div>
+          )}
 
-            {/* 1. Risk Overview Card with Score Semantics & Decision */}
-            <RiskOverviewCard result={currentAnalysis} />
-
-            {/* 2. Deterministic Evidence Ledger with exact phrases & turn numbers */}
-            <EvidenceFindings evidence={currentAnalysis.evidence} />
-
-            {/* 3. Actionable Senior Protection Recommendations & Report */}
-            <ProtectionRecommendations result={currentAnalysis} />
-          </div>
-        )}
-
-        {/* PAGE 4: CONVERSATION TIMELINE */}
-        {currentTab === 'timeline' && currentAnalysis && (
-          <div>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '20px',
-              flexWrap: 'wrap',
-              gap: '10px',
-            }}>
-              <div>
-                <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Incremental Turn-by-Turn Progression Timeline
+          {/* PAGE 7: EVALUATION HISTORY */}
+          {currentTab === 'recent' && (
+            <div>
+              <div style={{ marginBottom: '22px' }}>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <History size={22} color="var(--brand-primary)" />
+                  <span>Evaluation History & Forensic Logs</span>
                 </h2>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Shows incremental risk velocity calculated dynamically from actual backend evaluations (`/api/analyze/progression`).
+                <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Review past scan determinations, risk classifications, and verifiable evidence trails.
                 </p>
               </div>
 
-              <button
-                onClick={() => setCurrentTab('results')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 14px',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: 'var(--bg-surface-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-secondary)',
-                  fontSize: '0.86rem',
+              <RecentAnalysesDrawer
+                recentList={recentAnalyses}
+                onSelectAnalysis={(res) => {
+                  setCurrentAnalysis(res);
+                  setSelectedDemoId(res.demo_scenario_id || null);
+                  setTranscript(res.raw_transcript || '');
+                  setCurrentTab('results');
                 }}
-              >
-                <span>View Evidence Ledger</span>
-              </button>
+                activeId={currentAnalysis?.id}
+                isRetainingHistory={preferences.saveHistoryLocally}
+              />
             </div>
+          )}
 
-            <ProgressiveTimeline progressions={activeProgression?.turns || currentAnalysis.turn_progression} />
-          </div>
-        )}
-
-        {/* PAGE 5: RECENT ANALYSES */}
-        {currentTab === 'recent' && (
-          <div>
-            <div style={{ marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                Recent Conversation Evaluations
-              </h2>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                Review past scan determinations, risk classifications, and evidence trails.
-              </p>
+          {/* PAGE 8: SETTINGS & PRIVACY */}
+          {currentTab === 'settings' && (
+            <div>
+              <SettingsView
+                preferences={preferences}
+                onUpdatePreferences={updatePreferences}
+                onClearLocalHistory={handleClearLocalHistory}
+                localHistoryCount={recentAnalyses.filter((r) => !r.is_demo).length}
+              />
             </div>
+          )}
+        </main>
 
-            <RecentAnalysesDrawer
-              recentList={recentAnalyses}
-              onSelectAnalysis={(res) => {
-                setCurrentAnalysis(res);
-                setSelectedDemoId(res.demo_scenario_id || null);
-                setTranscript(res.raw_transcript || '');
-                setCurrentTab('results');
-              }}
-              activeId={currentAnalysis?.id}
-              isRetainingHistory={preferences.saveHistoryLocally}
-            />
+        {/* Accessible Clinical Footer */}
+        <footer
+          style={{
+            backgroundColor: 'var(--bg-surface)',
+            borderTop: '1px solid var(--border-subtle)',
+            padding: '20px 24px',
+            color: 'var(--text-secondary)',
+            fontSize: '0.82rem',
+            marginTop: 'auto',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: '1240px',
+              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontWeight: 700, color: 'var(--brand-primary)' }}>ElderShield</span>
+              <span>• Hack With Vizag 4.0 (HWV4-PS05)</span>
+            </div>
+            <div>
+              Multi-Vector Scam Intervention • English • हिन्दी • తెలుగు • Multilingual
+            </div>
+            <div>
+              National Cybercrime Helpline: <a href="tel:1930" style={{ color: 'var(--risk-high)', fontWeight: 700 }}>1930</a>
+            </div>
           </div>
-        )}
-
-        {/* PAGE 6: SETTINGS */}
-        {currentTab === 'settings' && (
-          <div>
-            <SettingsView
-              preferences={preferences}
-              onUpdatePreferences={updatePreferences}
-              onClearLocalHistory={handleClearLocalHistory}
-              localHistoryCount={recentAnalyses.filter(r => !r.is_demo).length}
-            />
-          </div>
-        )}
-      </main>
-
-      {/* Accessible Footer */}
-      <footer style={{
-        backgroundColor: 'var(--bg-surface)',
-        borderTop: '1px solid var(--border-subtle)',
-        padding: '22px 24px',
-        textAlign: 'center',
-        color: 'var(--text-muted)',
-        fontSize: '0.84rem',
-      }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ color: 'var(--accent-cyan)' }}>ElderShield</span>
-            <span>• Hack With Vizag 4.0 (HWV4-PS05)</span>
-          </div>
-          <div>
-            Rule-Based Scam Detection • English • हिन्दी • తెలుగు • Multilingual
-          </div>
-          <div>
-            National Cybercrime Helpline: <strong>1930</strong>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      </div>
     </div>
   );
 };

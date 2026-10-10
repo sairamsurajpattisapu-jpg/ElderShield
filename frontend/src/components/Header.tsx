@@ -1,182 +1,179 @@
 import React from 'react';
-import {
-  Shield,
-  PhoneCall,
-  LayoutDashboard,
-  MessageSquare,
-  FileCheck2,
-  TrendingUp,
-  History,
-  Sliders,
-  Radio,
-} from 'lucide-react';
+import { Menu, Phone, ShieldCheck, Activity } from 'lucide-react';
 
-export type NavTab = 'dashboard' | 'live' | 'analyze' | 'results' | 'timeline' | 'recent' | 'settings';
+export type NavTab =
+  | 'dashboard'
+  | 'live'
+  | 'caller'
+  | 'analyze'
+  | 'results'
+  | 'timeline'
+  | 'recent'
+  | 'settings';
 
 interface HeaderProps {
   currentTab: NavTab;
-  onSelectTab: (tab: NavTab) => void;
+  onOpenMobileSidebar: () => void;
+  isBackendHealthy: boolean;
   hasActiveResult: boolean;
+  onSelectTab: (tab: NavTab) => void;
 }
+
+const TAB_META: Record<NavTab, { title: string; description: string }> = {
+  dashboard: {
+    title: 'Protection Overview',
+    description: 'Real-time telemetry, companion status, and multi-vector scam triage.',
+  },
+  live: {
+    title: 'Live Audio Monitor',
+    description: 'Acoustic stream processing, behavioral rule extraction, and live OTP protection.',
+  },
+  caller: {
+    title: 'Caller Intelligence & Spoof Defense',
+    description: 'ITU E.164 normalization, institutional registry matching, and conflict verification.',
+  },
+  analyze: {
+    title: 'Conversation Analysis',
+    description: 'Evaluate speech recordings or transcripts against multi-vector fraud indicators.',
+  },
+  results: {
+    title: 'Evidence Ledger & Assessment',
+    description: 'Verifiable multi-turn forensic findings, behavioral quotes, and elder safety guidance.',
+  },
+  timeline: {
+    title: 'Turn-by-Turn Risk Velocity',
+    description: 'Incremental velocity tracking calculated across each conversational dialogue exchange.',
+  },
+  recent: {
+    title: 'Evaluation History & Audits',
+    description: 'Inspect past session evaluations, risk determinations, and diagnostic reports.',
+  },
+  settings: {
+    title: 'Settings & Privacy Controls',
+    description: 'Senior accessibility typography, audible alert parameters, and data governance.',
+  },
+};
 
 export const Header: React.FC<HeaderProps> = ({
   currentTab,
-  onSelectTab,
-  hasActiveResult,
+  onOpenMobileSidebar,
+  isBackendHealthy,
 }) => {
-  const navItems = [
-    { id: 'dashboard' as NavTab, label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
-    { id: 'live' as NavTab, label: 'Live Call Detection', icon: <Radio size={16} /> },
-    { id: 'analyze' as NavTab, label: 'Analyze Conversation', icon: <MessageSquare size={16} /> },
-    { id: 'results' as NavTab, label: 'Risk Results', icon: <FileCheck2 size={16} />, disabled: !hasActiveResult },
-    { id: 'timeline' as NavTab, label: 'Conversation Timeline', icon: <TrendingUp size={16} />, disabled: !hasActiveResult },
-    { id: 'recent' as NavTab, label: 'Recent Analyses', icon: <History size={16} /> },
-    { id: 'settings' as NavTab, label: 'Settings', icon: <Sliders size={16} /> },
-  ];
+  const currentMeta = TAB_META[currentTab] || {
+    title: 'ElderShield Console',
+    description: 'Conversational fraud protection for seniors.',
+  };
 
   return (
-    <header style={{
-      backgroundColor: 'var(--bg-surface)',
-      borderBottom: '1px solid var(--border-subtle)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-      backdropFilter: 'blur(8px)',
-    }}>
-      {/* Top Banner Row */}
-      <div style={{
-        maxWidth: '1280px',
-        margin: '0 auto',
-        padding: '14px 24px',
+    <header
+      style={{
+        backgroundColor: 'var(--bg-surface)',
+        borderBottom: '1px solid var(--border-subtle)',
+        padding: '16px 28px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '14px',
-      }}>
-        {/* Brand identity */}
-        <div
-          onClick={() => onSelectTab('dashboard')}
-          style={{ display: 'flex', alignItems: 'center', gap: '14px', cursor: 'pointer' }}
-        >
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            backgroundColor: 'rgba(6, 182, 212, 0.12)',
-            border: '1.5px solid var(--accent-cyan)',
-            display: 'flex',
+        gap: '16px',
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+      }}
+    >
+      {/* Left: Mobile Toggle & Page Title */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+        <button
+          onClick={onOpenMobileSidebar}
+          className="mobile-hamburger-btn"
+          style={{
+            background: 'none',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '7px',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            display: 'none',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--accent-cyan)',
-            boxShadow: '0 0 16px rgba(6, 182, 212, 0.2)',
-          }}>
-            <Shield size={24} strokeWidth={2.4} />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{
-                fontSize: '1.35rem',
-                fontWeight: 800,
-                letterSpacing: '-0.02em',
-                color: 'var(--text-primary)',
-              }}>
-                Elder<span style={{ color: 'var(--accent-cyan)' }}>Shield</span>
-              </span>
-              <span style={{
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                padding: '2px 7px',
-                borderRadius: '4px',
-                backgroundColor: 'rgba(20, 184, 166, 0.15)',
-                color: 'var(--accent-teal)',
-                border: '1px solid rgba(20, 184, 166, 0.3)',
-              }}>
-                HWV4-PS05
-              </span>
-            </div>
-            <p style={{
-              fontSize: '0.8rem',
-              color: 'var(--text-secondary)',
-              marginTop: '1px',
-            }}>
-              Real-Time Conversational Scam Detection for Elderly Users
-            </p>
-          </div>
-        </div>
+          }}
+          aria-label="Open navigation menu"
+        >
+          <Menu size={20} />
+        </button>
 
-        {/* Emergency Helpline Callout */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <a
-            href="tel:1930"
-            title="National Cyber Crime Reporting Helpline"
+        <div style={{ minWidth: 0 }}>
+          <h1
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 14px',
-              backgroundColor: 'rgba(239, 68, 68, 0.12)',
-              border: '1px solid var(--risk-high-border)',
-              borderRadius: 'var(--radius-md)',
-              color: '#fca5a5',
-              textDecoration: 'none',
+              fontSize: '1.28rem',
               fontWeight: 700,
-              fontSize: '0.86rem',
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}
           >
-            <PhoneCall size={15} color="#ef4444" />
-            <span>Cyber Helpline: <strong>1930</strong></span>
-          </a>
+            {currentMeta.title}
+          </h1>
+          <p
+            style={{
+              fontSize: '0.84rem',
+              color: 'var(--text-secondary)',
+              marginTop: '2px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {currentMeta.description}
+          </p>
         </div>
       </div>
 
-      {/* Navigation Tabs Bar */}
-      <nav style={{
-        borderTop: '1px solid var(--border-subtle)',
-        backgroundColor: 'var(--bg-primary)',
-        overflowX: 'auto',
-      }}>
-        <div style={{
-          maxWidth: '1280px',
-          margin: '0 auto',
-          padding: '0 24px',
-          display: 'flex',
-          gap: '4px',
-          minWidth: 'max-content',
-        }}>
-          {navItems.map((item) => {
-            const isActive = currentTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => !item.disabled && onSelectTab(item.id)}
-                disabled={item.disabled}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '12px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: isActive ? '2.5px solid var(--accent-cyan)' : '2.5px solid transparent',
-                  color: isActive ? 'var(--accent-cyan)' : item.disabled ? 'var(--text-muted)' : 'var(--text-secondary)',
-                  fontWeight: isActive ? 700 : 500,
-                  fontSize: '0.88rem',
-                  cursor: item.disabled ? 'not-allowed' : 'pointer',
-                  opacity: item.disabled ? 0.4 : 1,
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
+      {/* Right: Actions & Status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+        {/* Backend Status Chip */}
+        <div
+          title={isBackendHealthy ? 'ElderShield FastAPI Backend 127.0.0.1:8000 Healthy' : 'Backend Unreachable'}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '5px 10px',
+            borderRadius: 'var(--radius-full)',
+            backgroundColor: isBackendHealthy ? 'var(--risk-safe-bg)' : 'var(--risk-high-bg)',
+            border: `1px solid ${isBackendHealthy ? 'var(--risk-safe-border)' : 'var(--risk-high-border)'}`,
+            color: isBackendHealthy ? 'var(--risk-safe)' : 'var(--risk-high)',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+          }}
+        >
+          {isBackendHealthy ? (
+            <ShieldCheck size={14} color="var(--risk-safe)" />
+          ) : (
+            <Activity size={14} color="var(--risk-high)" />
+          )}
+          <span>{isBackendHealthy ? 'Engine Ready' : 'Backend Degraded'}</span>
         </div>
-      </nav>
+
+        {/* Emergency Helpline Callout */}
+        <a
+          href="tel:1930"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '7px',
+            padding: '6px 12px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--text-primary)',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+          }}
+        >
+          <Phone size={13} color="var(--risk-high)" />
+          <span>Helpline: <strong>1930</strong></span>
+        </a>
+      </div>
     </header>
   );
 };

@@ -1,33 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Elder-friendly high contrast color palette -->
-    <color name="primary">#1565C0</color>
-    <color name="primary_dark">#0D47A1</color>
-    <color name="accent">#2E7D32</color>
+    <!-- ElderShield Predominantly White, Minimal & Clinical-Security Color Palette -->
+    <!-- Core Brand & Actions -->
+    <color name="primary">#263B5E</color>
+    <color name="primary_action">#263B5E</color>
+    <color name="primary_dark">#1D2D49</color>
+    <color name="primary_hover">#1D2D49</color>
+    <color name="accent">#5376A5</color>
+    <color name="muted_blue">#5376A5</color>
+    <color name="soft_blue_accent">#EAF1FB</color>
 
-    <color name="bg_screen">#F8FAFC</color>
+    <!-- Backgrounds & Surfaces -->
+    <color name="bg_screen">#FFFFFF</color>
+    <color name="bg_secondary">#F7F8FA</color>
     <color name="card_bg">#FFFFFF</color>
-    <color name="text_primary">#0F172A</color>
-    <color name="text_secondary">#475569</color>
+    <color name="card_surface">#FFFFFF</color>
+    <color name="card_stroke">#E8EAED</color>
+    <color name="borders">#E8EAED</color>
+    <color name="subtle_dividers">#F0F1F3</color>
 
-    <!-- Protection Status Colors -->
-    <color name="status_green_bg">#DCFCE7</color>
-    <color name="status_green_text">#14532D</color>
-    <color name="status_green_stroke">#22C55E</color>
+    <!-- Typography -->
+    <color name="text_primary">#202124</color>
+    <color name="text_secondary">#697386</color>
+    <color name="text_muted">#8C96A5</color>
+    <color name="text_white">#FFFFFF</color>
 
-    <color name="status_blue_bg">#DBEAFE</color>
-    <color name="status_blue_text">#1E3A8A</color>
-    <color name="status_blue_stroke">#3B82F6</color>
+    <!-- Status: Protected / Success -->
+    <color name="success">#287D68</color>
+    <color name="success_background">#EAF5F0</color>
+    <color name="status_green_bg">#EAF5F0</color>
+    <color name="status_green_text">#287D68</color>
+    <color name="status_green_stroke">#287D68</color>
 
-    <color name="status_red_bg">#FEE2E2</color>
-    <color name="status_red_text">#991B1B</color>
-    <color name="status_red_stroke">#EF4444</color>
+    <!-- Status: Connecting / Muted Blue -->
+    <color name="status_blue_bg">#EAF1FB</color>
+    <color name="status_blue_text">#263B5E</color>
+    <color name="status_blue_stroke">#5376A5</color>
 
-    <color name="status_amber_bg">#FEF3C7</color>
-    <color name="status_amber_text">#78350F</color>
-    <color name="status_amber_stroke">#F59E0B</color>
+    <!-- Status: Suspicious / Warning Amber -->
+    <color name="suspicious_amber">#B7791F</color>
+    <color name="warning_background">#FFF5E5</color>
+    <color name="status_amber_bg">#FFF5E5</color>
+    <color name="status_amber_text">#B7791F</color>
+    <color name="status_amber_stroke">#FCE8B2</color>
 
-    <color name="btn_start">#16A34A</color>
-    <color name="btn_stop">#DC2626</color>
-    <color name="btn_helpline">#9333EA</color>
+    <!-- Status: High-Risk Alert / Danger Red -->
+    <color name="high_risk_red">#C43D40</color>
+    <color name="high_risk_background">#FCEEEF</color>
+    <color name="status_red_bg">#FCEEEF</color>
+    <color name="status_red_text">#C43D40</color>
+    <color name="status_red_stroke">#F8D7DA</color>
+
+    <!-- Action Buttons -->
+    <color name="btn_start">#263B5E</color>
+    <color name="btn_stop">#C43D40</color>
+    <color name="btn_helpline">#263B5E</color>
 </resources>

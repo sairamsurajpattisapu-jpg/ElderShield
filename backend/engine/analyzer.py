@@ -321,6 +321,22 @@ class ConversationRiskEngine:
 
         for turn in turns:
             signals, turn_evidence = self._extract_turn_signals(turn, seen_quotes)
+
+            # If Caller speech was fragmented across chunk boundaries, also inspect immediate caller context
+            if not self._is_senior_speaker(turn.speaker) and len(turns) > 1:
+                prior_caller_turns = [t for t in turns if t.turn_number < turn.turn_number and not self._is_senior_speaker(t.speaker)]
+                if prior_caller_turns:
+                    merged_context = " ".join([t.text for t in prior_caller_turns[-3:]] + [turn.text])
+                    context_turn = ConversationTurn(
+                        turn_number=turn.turn_number,
+                        speaker=turn.speaker,
+                        text=merged_context
+                    )
+                    ctx_signals, ctx_evidence = self._extract_turn_signals(context_turn, seen_quotes)
+                    for k, v in ctx_signals.items():
+                        signals[k].extend(v)
+                    turn_evidence.extend(ctx_evidence)
+
             all_evidence.extend(turn_evidence)
 
             new_signals_this_turn = []

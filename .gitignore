@@ -56,3 +56,10 @@ android/local.properties
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Local verification artifacts and scratch media
+*.png
+*_speech.wav
+urgent_otp_scam.wav
+generate_*.ps1
+

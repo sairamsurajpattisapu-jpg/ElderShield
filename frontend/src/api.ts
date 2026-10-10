@@ -112,3 +112,17 @@ export async function lookupCallerIdentity(
   return res.json();
 }
 
+export async function fetchReadyStatus(): Promise<{
+  status: string;
+  active_sessions?: number;
+  services?: {
+    speech_recognition: string;
+    scam_analyzer: string;
+    caller_lookup: string;
+    active_live_call_sessions: number;
+  };
+}> {
+  const res = await fetch(`${API_BASE}/api/ready`);
+  if (!res.ok) throw new Error('Ready check failed');
+  return res.json();
+}

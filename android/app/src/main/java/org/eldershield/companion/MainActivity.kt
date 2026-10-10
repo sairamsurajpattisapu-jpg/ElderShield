@@ -170,10 +170,18 @@ class MainActivity : AppCompatActivity() {
                 binding.tvStatusTitle.setTextColor(ContextCompat.getColor(this, R.color.status_green_text))
                 binding.tvStatusSubtitle.setTextColor(ContextCompat.getColor(this, R.color.status_green_text))
                 binding.cardStatus.setBackgroundResource(R.drawable.bg_status_box)
+                binding.ivShieldIcon.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.status_green_text)
 
                 binding.btnToggleProtection.text = getString(R.string.btn_stop_protection)
                 binding.btnToggleProtection.backgroundTintList =
                     ContextCompat.getColorStateList(this, R.color.btn_stop)
+
+                binding.tvMicBadge.text = "Mic: Listening"
+                binding.tvMicBadge.setTextColor(ContextCompat.getColor(this, R.color.status_green_text))
+                binding.tvEngineBadge.text = "Scam Engine: Active"
+                binding.dotEngineStatus.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.status_green_text)
             }
             "STARTING", "CONNECTING" -> {
                 binding.tvStatusTitle.text = "CONNECTING..."
@@ -181,10 +189,18 @@ class MainActivity : AppCompatActivity() {
                 binding.tvStatusTitle.setTextColor(ContextCompat.getColor(this, R.color.status_amber_text))
                 binding.tvStatusSubtitle.setTextColor(ContextCompat.getColor(this, R.color.status_amber_text))
                 binding.cardStatus.setBackgroundResource(R.drawable.bg_status_amber)
+                binding.ivShieldIcon.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.status_amber_text)
 
                 binding.btnToggleProtection.text = getString(R.string.btn_stop_protection)
                 binding.btnToggleProtection.backgroundTintList =
                     ContextCompat.getColorStateList(this, R.color.btn_stop)
+
+                binding.tvMicBadge.text = "Mic: Ready"
+                binding.tvMicBadge.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                binding.tvEngineBadge.text = "Connecting..."
+                binding.dotEngineStatus.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.status_amber_text)
             }
             "RECONNECTING" -> {
                 binding.tvStatusTitle.text = "RECONNECTING..."
@@ -192,10 +208,18 @@ class MainActivity : AppCompatActivity() {
                 binding.tvStatusTitle.setTextColor(ContextCompat.getColor(this, R.color.status_amber_text))
                 binding.tvStatusSubtitle.setTextColor(ContextCompat.getColor(this, R.color.status_amber_text))
                 binding.cardStatus.setBackgroundResource(R.drawable.bg_status_amber)
+                binding.ivShieldIcon.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.status_amber_text)
 
                 binding.btnToggleProtection.text = getString(R.string.btn_stop_protection)
                 binding.btnToggleProtection.backgroundTintList =
                     ContextCompat.getColorStateList(this, R.color.btn_stop)
+
+                binding.tvMicBadge.text = "Mic: Retrying"
+                binding.tvMicBadge.setTextColor(ContextCompat.getColor(this, R.color.status_amber_text))
+                binding.tvEngineBadge.text = "Reconnecting..."
+                binding.dotEngineStatus.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.status_amber_text)
             }
             "DEGRADED", "FAILED" -> {
                 binding.tvStatusTitle.text = "PROTECTION OFFLINE"
@@ -203,21 +227,37 @@ class MainActivity : AppCompatActivity() {
                 binding.tvStatusTitle.setTextColor(ContextCompat.getColor(this, R.color.status_red_text))
                 binding.tvStatusSubtitle.setTextColor(ContextCompat.getColor(this, R.color.status_red_text))
                 binding.cardStatus.setBackgroundResource(R.drawable.bg_status_red)
+                binding.ivShieldIcon.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.status_red_text)
 
                 binding.btnToggleProtection.text = "RETRY PROTECTION"
                 binding.btnToggleProtection.backgroundTintList =
                     ContextCompat.getColorStateList(this, R.color.btn_start)
+
+                binding.tvMicBadge.text = "Mic: Off"
+                binding.tvMicBadge.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                binding.tvEngineBadge.text = "Server Offline"
+                binding.dotEngineStatus.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.status_red_text)
             }
             else -> { // STOPPED
                 binding.tvStatusTitle.text = getString(R.string.shield_inactive)
                 binding.tvStatusSubtitle.text = getString(R.string.status_paused)
-                binding.tvStatusTitle.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                binding.tvStatusTitle.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
                 binding.tvStatusSubtitle.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
                 binding.cardStatus.setBackgroundResource(R.drawable.bg_elder_card)
+                binding.ivShieldIcon.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.primary)
 
                 binding.btnToggleProtection.text = getString(R.string.btn_start_protection)
                 binding.btnToggleProtection.backgroundTintList =
                     ContextCompat.getColorStateList(this, R.color.btn_start)
+
+                binding.tvMicBadge.text = "Mic: Standby"
+                binding.tvMicBadge.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                binding.tvEngineBadge.text = "Engine: Standby"
+                binding.dotEngineStatus.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.text_muted)
             }
         }
     }
@@ -228,20 +268,25 @@ class MainActivity : AppCompatActivity() {
         updateProtectionStateUi(state, msg, 0)
     }
 
-
     private fun updateRiskUi(riskLevel: String, score: Double) {
         when (riskLevel) {
             "HIGH_RISK" -> {
                 binding.tvStatusTitle.text = "HIGH RISK DETECTED"
                 binding.tvStatusSubtitle.text = "Manipulative scam tactics detected on this call."
-                binding.tvStatusTitle.setTextColor(Color.parseColor("#991B1B"))
-                binding.tvStatusSubtitle.setTextColor(Color.parseColor("#991B1B"))
+                binding.tvStatusTitle.setTextColor(ContextCompat.getColor(this, R.color.high_risk_red))
+                binding.tvStatusSubtitle.setTextColor(ContextCompat.getColor(this, R.color.high_risk_red))
+                binding.cardStatus.setBackgroundResource(R.drawable.bg_status_red)
+                binding.ivShieldIcon.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.high_risk_red)
             }
             "SUSPICIOUS" -> {
                 binding.tvStatusTitle.text = "CAUTION: SUSPICIOUS CALL"
                 binding.tvStatusSubtitle.text = "Caller is demanding urgency or credentials."
-                binding.tvStatusTitle.setTextColor(Color.parseColor("#78350F"))
-                binding.tvStatusSubtitle.setTextColor(Color.parseColor("#78350F"))
+                binding.tvStatusTitle.setTextColor(ContextCompat.getColor(this, R.color.suspicious_amber))
+                binding.tvStatusSubtitle.setTextColor(ContextCompat.getColor(this, R.color.suspicious_amber))
+                binding.cardStatus.setBackgroundResource(R.drawable.bg_status_amber)
+                binding.ivShieldIcon.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.suspicious_amber)
             }
             else -> {
                 updateShieldStatusUi()
@@ -250,8 +295,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun displayScamAlert(title: String, message: String) {
-        binding.tvAlertTitle.text = title
-        binding.tvAlertMessage.text = message
+        val formattedTitle = if (title.contains("OTP", ignoreCase = true) || message.contains("OTP", ignoreCase = true)) {
+            "STOP — DO NOT SHARE YOUR OTP"
+        } else {
+            title
+        }
+        val formattedMessage = if (title.contains("OTP", ignoreCase = true) || message.contains("OTP", ignoreCase = true)) {
+            "Never tell anyone your verification code. If someone is pressuring you, stop the conversation and verify their identity independently."
+        } else {
+            message
+        }
+        binding.tvAlertTitle.text = formattedTitle
+        binding.tvAlertMessage.text = formattedMessage
         binding.cardAlert.visibility = View.VISIBLE
     }
 
@@ -282,27 +337,27 @@ class MainActivity : AppCompatActivity() {
                         displayText.append("Number matches a listed institutional contact, but Caller ID can be spoofed over telephony networks.\n\n")
                         displayText.append("Action: Verify independently using the institution's official contact details.\n\n")
                         displayText.append(result.advisory)
-                        binding.tvCallerResult.setBackgroundColor(Color.parseColor("#FEF3C7"))
-                        binding.tvCallerResult.setTextColor(Color.parseColor("#92400E"))
+                        binding.tvCallerResult.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.warning_background))
+                        binding.tvCallerResult.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.suspicious_amber))
                     } else if (result.spoofingSuspected) {
                         displayText.append("POTENTIALLY SUSPICIOUS: IDENTITY CONFLICT DETECTED!\n\n")
                         displayText.append("Originating Number: ${result.nationalFormat ?: number}\n")
                         displayText.append(result.advisory)
-                        binding.tvCallerResult.setBackgroundColor(Color.parseColor("#FEE2E2"))
-                        binding.tvCallerResult.setTextColor(Color.parseColor("#991B1B"))
+                        binding.tvCallerResult.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.high_risk_background))
+                        binding.tvCallerResult.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.high_risk_red))
                     } else if (!result.isValid) {
                         displayText.append("INVALID NUMBER FORMAT\n\n")
                         displayText.append(result.advisory)
-                        binding.tvCallerResult.setBackgroundColor(Color.parseColor("#FEE2E2"))
-                        binding.tvCallerResult.setTextColor(Color.parseColor("#991B1B"))
+                        binding.tvCallerResult.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.high_risk_background))
+                        binding.tvCallerResult.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.high_risk_red))
                     } else {
                         displayText.append("CALLER IDENTITY UNVERIFIED\n\n")
                         displayText.append("Assess the conversation and never disclose OTPs, PINs, passwords, or banking credentials.\n\n")
                         displayText.append("Number Type: ${result.numberType} (${result.carrier ?: "Standard Provider"})\n")
                         displayText.append("Allocation Area: ${result.geographicRegion ?: "India"}\n")
                         displayText.append("ℹ️ Region metadata reflects initial numbering allocation, not physical location.")
-                        binding.tvCallerResult.setBackgroundColor(Color.parseColor("#F1F5F9"))
-                        binding.tvCallerResult.setTextColor(Color.parseColor("#0F172A"))
+                        binding.tvCallerResult.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.bg_secondary))
+                        binding.tvCallerResult.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
                     }
 
                     binding.tvCallerResult.text = displayText.toString()

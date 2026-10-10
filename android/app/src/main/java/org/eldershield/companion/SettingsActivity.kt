@@ -25,6 +25,10 @@ class SettingsActivity : AppCompatActivity() {
         binding.switchSound.isChecked = prefs.isSoundEnabled
         binding.switchCallScreening.isChecked = prefs.isCallScreeningEnabled
 
+        binding.btnBackSettings.setOnClickListener {
+            finish()
+        }
+
         binding.btnSaveSettings.setOnClickListener {
             val newUrl = binding.etServerUrl.text?.toString()?.trim() ?: ""
             val newKey = binding.etApiKey.text?.toString()?.trim() ?: ""

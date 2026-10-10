@@ -4,31 +4,25 @@ import {
   MicOff,
   Radio,
   PhoneOff,
-  AlertTriangle,
-  PhoneCall,
   Play,
   Pause,
   RotateCcw,
-  Sparkles,
-  ArrowRight,
   Clock,
   Activity,
   FileAudio,
-  UserCheck,
-  ShieldCheck,
-  ShieldAlert,
   X,
+  ArrowRight,
+  AlertOctagon,
+  Phone,
 } from 'lucide-react';
 import type {
   RiskAssessment,
   RiskLevel,
-  LiveRiskUpdate,
   LiveWarning,
-  CallerIntelligenceResult,
   OtpRiskState,
   OtpInterventionEvent,
 } from '../types';
-import { getLiveCallWsUrl, analyzeAudioFile, analyzeConversation, analyzeProgression, lookupCallerIdentity } from '../api';
+import { getLiveCallWsUrl, analyzeAudioFile, analyzeConversation } from '../api';
 import { playRiskAlert } from '../utils/audioAlert';
 
 // Browser Web Speech API interface declaration for TypeScript
@@ -76,6 +70,7 @@ interface LiveTurn {
 interface LiveCallMonitorProps {
   onLoadFullAnalysis: (assessment: RiskAssessment) => void;
   soundAlertsEnabled: boolean;
+  onOpenCallerLookup?: () => void;
 }
 
 // Built-in live demo simulation scripts
@@ -84,43 +79,93 @@ const SIMULATED_CALLS = [
     id: 'sim_cbi_arrest',
     title: 'CBI Digital Arrest (High Risk)',
     lang: 'English / Hinglish',
+    description: 'Impersonation of Central Bureau of Investigation claiming seized contraband, issuing false arrest warrants, and demanding RBI escrow transfer.',
     turns: [
       { speaker: 'Caller' as const, text: 'This is Officer Sharma from Central Bureau of Investigation, New Delhi headquarters.' },
       { speaker: 'Senior' as const, text: 'Hello, why are you calling me?' },
       { speaker: 'Caller' as const, text: 'A parcel addressed to you containing fake passports and contraband was intercepted at Mumbai customs. You are under digital arrest.' },
       { speaker: 'Senior' as const, text: 'Oh God! I have never ordered any parcel! Please help me.' },
       { speaker: 'Caller' as const, text: 'Do not disconnect this call or inform your family, otherwise local police will be dispatched to arrest you immediately.' },
-      { speaker: 'Caller' as const, text: 'To prove your innocence and clear your bank account from money laundering charges, transfer 85,000 rupees to our RBI verification escrow account right now.' }
-    ]
+      { speaker: 'Caller' as const, text: 'To prove your innocence and clear your bank account from money laundering charges, transfer 85,000 rupees to our RBI verification escrow account right now.' },
+    ],
   },
   {
     id: 'sim_bank_otp',
-    title: 'SBI NetBanking Expiry (High Risk)',
+    title: 'SBI NetBanking Expiry (High Risk — OTP Solicitation)',
     lang: 'English / Hindi',
+    description: 'Bank impersonator threatening immediate account suspension and demanding immediate dictation of a 6-digit verification code.',
     turns: [
       { speaker: 'Caller' as const, text: 'Good morning sir, I am calling from State Bank of India cards security division.' },
       { speaker: 'Senior' as const, text: 'Yes, what is the issue with my card?' },
       { speaker: 'Caller' as const, text: 'Your debit card and NetBanking services are expiring today. Your account will be frozen within one hour.' },
       { speaker: 'Senior' as const, text: 'How do I stop it from getting frozen?' },
-      { speaker: 'Caller' as const, text: 'I am sending a 6-digit verification code to your registered mobile. Read the OTP immediately to update your KYC.' }
-    ]
+      { speaker: 'Caller' as const, text: 'I am sending a 6-digit verification code to your registered mobile. Read the OTP immediately to update your KYC.' },
+    ],
   },
   {
     id: 'sim_legit_courier',
-    title: 'Legitimate Delivery Check (Low Risk)',
+    title: 'Legitimate Courier Delivery (Low Risk)',
     lang: 'English',
+    description: 'Standard delivery coordination advising the senior to never disclose verification codes over the phone.',
     turns: [
       { speaker: 'Caller' as const, text: 'Hello, I am calling from BlueDart courier regarding your parcel delivery scheduled today.' },
       { speaker: 'Senior' as const, text: 'Yes, I am expecting a book delivery. What time will you arrive?' },
       { speaker: 'Caller' as const, text: 'I will be at your address by 3 PM. Remember, never share any OTP or payment credentials with anyone over the phone.' },
-      { speaker: 'Senior' as const, text: 'Understood, thank you. See you at 3 PM.' }
-    ]
-  }
+      { speaker: 'Senior' as const, text: 'Understood, thank you. See you at 3 PM.' },
+    ],
+  },
 ];
+
+// Helper to mask sensitive OTP digits for elder privacy
+function maskSensitiveDigits(text: string): string {
+  return text.replace(/\b(\d{4,8})\b/g, (match) => {
+    return '•'.repeat(match.length);
+  });
+}
+
+// High-fidelity linear interpolation downsampler from any hardware sample rate to 16,000 Hz
+function resampleTo16k(input: Float32Array, inputSampleRate: number): Int16Array {
+  if (inputSampleRate === 16000) {
+    const pcm16 = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i]));
+      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return pcm16;
+  }
+  const ratio = inputSampleRate / 16000;
+  const outputLength = Math.floor(input.length / ratio);
+  const pcm16 = new Int16Array(outputLength);
+  for (let i = 0; i < outputLength; i++) {
+    const srcPos = i * ratio;
+    const srcIndex = Math.floor(srcPos);
+    const frac = srcPos - srcIndex;
+    const s1 = input[srcIndex];
+    const s2 = srcIndex + 1 < input.length ? input[srcIndex + 1] : s1;
+    const interpolated = s1 + frac * (s2 - s1);
+    const s = Math.max(-1, Math.min(1, interpolated));
+    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return pcm16;
+}
+
+// Memory-efficient fast base64 converter for Int16Array PCM buffers
+function pcm16ToBase64(pcm16: Int16Array): string {
+  const uint8 = new Uint8Array(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+  let binary = '';
+  const len = uint8.byteLength;
+  const chunkSize = 0x8000;
+  for (let i = 0; i < len; i += chunkSize) {
+    const sub = uint8.subarray(i, Math.min(i + chunkSize, len));
+    binary += String.fromCharCode.apply(null, sub as unknown as number[]);
+  }
+  return window.btoa(binary);
+}
 
 export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   onLoadFullAnalysis,
   soundAlertsEnabled,
+  onOpenCallerLookup,
 }) => {
   // Live session states
   const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
@@ -133,6 +178,14 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const [sessionDuration, setSessionDuration] = useState<number>(0);
   const [micAudioLevel, setMicAudioLevel] = useState<number>(0);
   const [micError, setMicError] = useState<string | null>(null);
+  const [interimSpeech, setInterimSpeech] = useState<string>('');
+
+  // Runtime Streaming Diagnostics
+  const [chunksSentCount, setChunksSentCount] = useState<number>(0);
+  const [totalBytesSent, setTotalBytesSent] = useState<number>(0);
+  const [chunksAckedCount, setChunksAckedCount] = useState<number>(0);
+  const [transcriptsCount, setTranscriptsCount] = useState<number>(0);
+  const [inputSampleRate, setInputSampleRate] = useState<number>(16000);
 
   // OTP Disclosure Prevention state machine
   const [otpState, setOtpState] = useState<OtpRiskState>('IDLE');
@@ -153,16 +206,39 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const isPausedRef = useRef<boolean>(false);
   const lastWarningFingerprintRef = useRef<string>('');
-
   const lastWarningTimeRef = useRef<number>(0);
+
+  // Refs for audio and websocket
+  const wsRef = useRef<WebSocket | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const speechRecognizerRef = useRef<SpeechRecognitionLike | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const muteGainRef = useRef<GainNode | null>(null);
+  const pingIntervalRef = useRef<number | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sessionTimerRef = useRef<number | null>(null);
+  const sequenceIdRef = useRef<number>(0);
+  const turnsRef = useRef<LiveTurn[]>([]);
+
+  useEffect(() => {
+    turnsRef.current = turns;
+  }, [turns]);
+
+  useEffect(() => {
+    return () => {
+      stopLiveMonitoring();
+    };
+  }, []);
 
   // Senior-friendly audible announcement with speech synthesis
   const announceAudibleWarning = (title: string, message: string) => {
     if (!soundAlertsEnabled) return;
     const now = Date.now();
     const fingerprint = `${title}:${message}`;
-    // Deduplicate identical alerts or repeated announcements within 4 seconds
-    if (lastWarningFingerprintRef.current === fingerprint && (now - lastWarningTimeRef.current) < 4000) return;
+    if (lastWarningFingerprintRef.current === fingerprint && now - lastWarningTimeRef.current < 4000) return;
     lastWarningFingerprintRef.current = fingerprint;
     lastWarningTimeRef.current = now;
 
@@ -181,12 +257,10 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
     }
   };
 
-  // Dedicated audible intervention announcement for OTP solicitation
   const announceAudibleIntervention = (spokenText: string, langHint?: string) => {
     if (!soundAlertsEnabled) return;
     const now = Date.now();
-    // Deduplicate identical alerts or repeated announcements within 5 seconds
-    if (lastWarningFingerprintRef.current === spokenText && (now - lastWarningTimeRef.current) < 5000) return;
+    if (lastWarningFingerprintRef.current === spokenText && now - lastWarningTimeRef.current < 5000) return;
     lastWarningFingerprintRef.current = spokenText;
     lastWarningTimeRef.current = now;
 
@@ -211,60 +285,492 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
     }
   };
 
-  // Caller verification state
-  const [callerPhone, setCallerPhone] = useState<string>('');
-  const [claimedOrg, setClaimedOrg] = useState<string>('');
-  const [callerIntel, setCallerIntel] = useState<CallerIntelligenceResult | null>(null);
-  const [isLookingUpCaller, setIsLookingUpCaller] = useState<boolean>(false);
-  const [phoneValidationError, setPhoneValidationError] = useState<string | null>(null);
-  const [lookupError, setLookupError] = useState<string | null>(null);
+  // Timer for active monitoring
+  useEffect(() => {
+    if (isMonitoring && !isPaused) {
+      sessionTimerRef.current = window.setInterval(() => {
+        setSessionDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (sessionTimerRef.current) {
+        clearInterval(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (sessionTimerRef.current) {
+        clearInterval(sessionTimerRef.current);
+      }
+    };
+  }, [isMonitoring, isPaused]);
 
-  // Handle caller verification
-  const handleVerifyCaller = async (phoneToVerify?: string, orgToVerify?: string) => {
-    const num = phoneToVerify !== undefined ? phoneToVerify : callerPhone;
-    const org = orgToVerify !== undefined ? orgToVerify : claimedOrg;
+  // Audio level polling for visual microphone meter
+  useEffect(() => {
+    let animFrame: number;
+    const checkAudioLevel = () => {
+      if (analyserRef.current && isMonitoring && !isPaused) {
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        setMicAudioLevel(Math.min(100, Math.round((avg / 128) * 100)));
+      } else {
+        setMicAudioLevel(0);
+      }
+      animFrame = requestAnimationFrame(checkAudioLevel);
+    };
+    if (isMonitoring) {
+      checkAudioLevel();
+    }
+    return () => cancelAnimationFrame(animFrame);
+  }, [isMonitoring, isPaused]);
 
-    // Reset previous state to prevent stale results from lingering
-    setPhoneValidationError(null);
-    setLookupError(null);
-    setCallerIntel(null);
+  // Stop monitoring clean-up
+  const stopLiveMonitoring = () => {
+    setIsMonitoring(false);
+    setIsSimulating(false);
+    setConnectionStatus('idle');
+    setInterimSpeech('');
 
-    const trimmed = num.trim();
-    if (!trimmed) {
-      setPhoneValidationError('Please enter a phone number to verify (e.g., +91 98490 12345 or 1800 1234).');
-      return;
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
     }
 
-    const digitsOnly = trimmed.replace(/\D/g, '');
-    if (digitsOnly.length < 3) {
-      setPhoneValidationError('Phone number must contain at least 3 digits.');
-      return;
+    if (wsRef.current) {
+      try {
+        if (wsRef.current.readyState === WebSocket.OPEN) {
+          // Send final stop flush command so backend processes remaining speech
+          wsRef.current.send(JSON.stringify({ type: 'stop' }));
+          const currentWs = wsRef.current;
+          setTimeout(() => {
+            try { currentWs.close(1000, 'Session stopped by user'); } catch {}
+          }, 200);
+        } else {
+          wsRef.current.close(1000, 'Session stopped by user');
+        }
+      } catch {
+        // ignore
+      }
+      wsRef.current = null;
     }
 
-    setIsLookingUpCaller(true);
+    if (processorNodeRef.current) {
+      try {
+        processorNodeRef.current.onaudioprocess = null;
+        processorNodeRef.current.disconnect();
+      } catch {}
+      processorNodeRef.current = null;
+    }
+
+    if (sourceNodeRef.current) {
+      try { sourceNodeRef.current.disconnect(); } catch {}
+      sourceNodeRef.current = null;
+    }
+
+    if (muteGainRef.current) {
+      try { muteGainRef.current.disconnect(); } catch {}
+      muteGainRef.current = null;
+    }
+
+    if (speechRecognizerRef.current) {
+      try {
+        speechRecognizerRef.current.stop();
+      } catch {
+        // ignore
+      }
+      speechRecognizerRef.current = null;
+    }
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // ignore
+      }
+      mediaRecorderRef.current = null;
+    }
+
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try {
+        audioContextRef.current.close();
+      } catch {
+        // ignore
+      }
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+  };
+
+  // Start Live Monitoring via WebSocket + Microphone
+  const startLiveMonitoring = async () => {
+    stopLiveMonitoring();
+    setMicError(null);
+    setInterimSpeech('');
+    setTurns([]);
+    setCurrentScore(0);
+    setCurrentRiskLevel('LOW_RISK');
+    setActiveWarning(null);
+    setActiveOtpIntervention(null);
+    setIsWarningDismissed(false);
+    setSessionDuration(0);
+    setFinalAssessment(null);
+    setChunksSentCount(0);
+    setTotalBytesSent(0);
+    setChunksAckedCount(0);
+    setTranscriptsCount(0);
+    setConnectionStatus('connecting');
+    setOtpState('CONNECTING');
+
+    // 1. Initialize AudioContext synchronously first so user gesture is attached directly
+    const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    let audioCtx: AudioContext | null = null;
+    if (AudioCtxClass) {
+      try {
+        audioCtx = new AudioCtxClass();
+        audioContextRef.current = audioCtx;
+        setInputSampleRate(audioCtx.sampleRate);
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+      } catch (e) {
+        console.warn('AudioContext initialization note', e);
+      }
+    }
+
+    // 2. Establish WebSocket Connection
     try {
-      const result = await lookupCallerIdentity(trimmed, org);
-      setCallerIntel(result);
+      const wsUrl = getLiveCallWsUrl();
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-      // Send caller_info to WebSocket if connected
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'caller_info',
-          phone_number: trimmed,
-          claimed_organization: org || undefined
-        }));
+      ws.onopen = () => {
+        setConnectionStatus('connected');
+        setIsMonitoring(true);
+        setOtpState('MONITORING');
+
+        // Resilient heartbeat: ping every 10 seconds to keep connection alive across proxies
+        if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = window.setInterval(() => {
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+          }
+        }, 10000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleIncomingWsMessage(data);
+        } catch (e) {
+          console.warn('Malformed WS message', e);
+        }
+      };
+
+      ws.onerror = (e) => {
+        console.warn('Live WebSocket error', e);
+        setConnectionStatus('disconnected');
+        setOtpState('ERROR');
+      };
+
+      ws.onclose = () => {
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+          pingIntervalRef.current = null;
+        }
+        setConnectionStatus('disconnected');
+        setIsMonitoring(false);
+      };
+    } catch (err: unknown) {
+      console.error('Failed to initialize WebSocket', err);
+      setConnectionStatus('disconnected');
+      setOtpState('ERROR');
+      return;
+    }
+
+    // 3. Request Microphone Access
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      });
+      mediaStreamRef.current = stream;
+
+      if (audioCtx) {
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
+
+        const source = audioCtx.createMediaStreamSource(stream);
+        sourceNodeRef.current = source;
+
+        // Visual dB meter analyser
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+
+        // ScriptProcessorNode producing exact 16kHz 16-bit Mono Little-Endian PCM frames for backend faster-whisper
+        const bufferSize = 4096;
+        const processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+        processorNodeRef.current = processor;
+        // Keep persistent reference to prevent V8 GC collection
+        (window as unknown as { __eldershield_processor?: ScriptProcessorNode }).__eldershield_processor = processor;
+
+        let localSentChunks = 0;
+        let localSentBytes = 0;
+
+        processor.onaudioprocess = (e) => {
+          if (isPausedRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+          const input = e.inputBuffer.getChannelData(0);
+          if (!input || input.length === 0) return;
+
+          // High-fidelity downsample from hardware sample rate to 16,000 Hz PCM
+          const pcm16 = resampleTo16k(input, audioCtx.sampleRate);
+          if (pcm16.length === 0) return;
+
+          const b64 = pcm16ToBase64(pcm16);
+          sequenceIdRef.current++;
+          const seq = sequenceIdRef.current;
+          const byteLen = pcm16.byteLength;
+
+          wsRef.current.send(
+            JSON.stringify({
+              type: 'audio_chunk',
+              sequence_id: seq,
+              chunk: b64,
+              client_time_ms: Date.now(),
+            })
+          );
+
+          localSentChunks++;
+          localSentBytes += byteLen;
+          if (localSentChunks % 6 === 0) {
+            setChunksSentCount(localSentChunks);
+            setTotalBytesSent(localSentBytes);
+          }
+        };
+
+        // Mute gain node avoids routing mic sound into user laptop speakers
+        // Value 1e-6 (-120 dB) prevents Chromium silent-device sleep while remaining inaudible
+        const muteGain = audioCtx.createGain();
+        muteGain.gain.value = 0.000001;
+        muteGainRef.current = muteGain;
+
+        source.connect(processor);
+        processor.connect(muteGain);
+        muteGain.connect(audioCtx.destination);
       }
 
-      // Quiet by default: Caller reputation data is displayed in the Caller Intelligence panel.
-      // Behavioral sirens/speech are preserved strictly for ongoing conversation threat detection.
-    } catch (e: unknown) {
-      console.warn('Caller lookup error:', e);
-      setLookupError('Telecom registry lookup failed. Please verify your connection and try again.');
-    } finally {
-      setIsLookingUpCaller(false);
+      // 4. Web Speech API for immediate client speech-to-text
+      initSpeechRecognition();
+    } catch (err: unknown) {
+      console.warn('Microphone permission rejected or not available', err);
+      setMicError('Microphone access was denied or is not available. Please allow microphone access in your browser settings.');
     }
   };
 
+  // Web Speech API initialization with real-time interim results
+  const initSpeechRecognition = () => {
+    const win = window as unknown as WindowWithSpeech;
+    const SpeechRec = win.SpeechRecognition || win.webkitSpeechRecognition;
+
+    if (!SpeechRec) {
+      console.warn('Browser SpeechRecognition not supported');
+      return;
+    }
+
+    const rec = new SpeechRec();
+    speechRecognizerRef.current = rec;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = selectedLanguage;
+
+    rec.onresult = (event: SpeechRecognitionEventLike) => {
+      if (isPausedRef.current) return;
+      let interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        const text = res[0].transcript.trim();
+        const isFinal = res.isFinal;
+
+        if (text) {
+          if (isFinal) {
+            handleNewRecognizedTurn(text, 'Caller');
+            setInterimSpeech('');
+          } else {
+            interimTranscript += text + ' ';
+          }
+        }
+      }
+      if (interimTranscript.trim()) {
+        setInterimSpeech(interimTranscript.trim());
+      }
+    };
+
+    rec.onerror = (e) => {
+      console.warn('SpeechRecognition error', e);
+    };
+
+    rec.onend = () => {
+      if (isMonitoring && !isPausedRef.current && speechRecognizerRef.current) {
+        try {
+          speechRecognizerRef.current.start();
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    try {
+      rec.start();
+    } catch {
+      // ignore
+    }
+  };
+
+  // Process incoming turn from client speech recognition or simulated audio
+  const handleNewRecognizedTurn = (text: string, speaker: 'Caller' | 'Senior') => {
+    setInterimSpeech('');
+    const cleanText = text.trim();
+    if (!cleanText) return;
+
+    setTurns((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].text.trim().toLowerCase() === cleanText.toLowerCase()) {
+        return prev;
+      }
+      const turnNumber = prev.length + 1;
+      return [
+        ...prev,
+        {
+          id: `turn_${turnNumber}_${Date.now()}`,
+          turnNumber,
+          speaker,
+          text: cleanText,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          isFinal: true,
+        },
+      ];
+    });
+
+    // Send transcript segment to backend over WebSocket
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'transcript_segment',
+          turn_number: turnsRef.current.length + 1,
+          speaker,
+          text: cleanText,
+          client_capture_time_ms: Date.now(),
+        })
+      );
+    }
+  };
+
+  // Handle server WebSocket messages
+  const handleIncomingWsMessage = (data: Record<string, unknown>) => {
+    const msgType = data.type as string;
+
+    if (msgType === 'chunk_ack') {
+      setChunksAckedCount((c) => c + 1);
+      return;
+    }
+
+    if (msgType === 'pong') {
+      return;
+    }
+
+    if (msgType === 'risk_update') {
+      const riskLevel = (data.risk_level as RiskLevel) || 'LOW_RISK';
+      const riskScore = (data.risk_score as number) || 0;
+      const detectedOtpState = (data.otp_state as OtpRiskState) || 'SAFE_OR_INCONCLUSIVE';
+      const recognizedText = data.text as string | undefined;
+      const speaker = (data.speaker as string) || 'Caller';
+
+      setCurrentRiskLevel(riskLevel);
+      setCurrentScore(riskScore);
+      setOtpState(detectedOtpState);
+
+      // Append recognized speech turn from server ASR to live dialogue stream
+      if (recognizedText && recognizedText.trim()) {
+        const cleanText = recognizedText.trim();
+        setTranscriptsCount((t) => t + 1);
+        setTurns((prev) => {
+          if (prev.length > 0 && prev[prev.length - 1].text.trim().toLowerCase() === cleanText.toLowerCase()) {
+            return prev;
+          }
+          const turnNumber = prev.length + 1;
+          return [
+            ...prev,
+            {
+              id: `ws_turn_${turnNumber}_${Date.now()}`,
+              turnNumber,
+              speaker: speaker === 'Senior' ? 'Senior' : 'Caller',
+              text: cleanText,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              isFinal: true,
+            },
+          ];
+        });
+      }
+
+      // Play alert sound if elevated
+      if (riskLevel === 'HIGH_RISK') {
+        playRiskAlert('HIGH_RISK');
+      } else if (riskLevel === 'SUSPICIOUS') {
+        playRiskAlert('SUSPICIOUS');
+      }
+    } else if (msgType === 'otp_intervention') {
+      const interventionEvent: OtpInterventionEvent = {
+        type: 'otp_intervention',
+        event_id: (data.event_id as string) || `event_${Date.now()}`,
+        session_id: (data.session_id as string) || '',
+        otp_state: (data.otp_state as OtpRiskState) || 'URGENT_INTERVENTION',
+        heading: (data.heading as string) || 'DO NOT SHARE YOUR OTP',
+        message: (data.message as string) || 'Never tell anyone your verification code.',
+        spoken_text: (data.spoken_text as string) || 'Stop! Do not share your OTP code.',
+        language: (data.language as string) || 'en',
+        evidence_quotes: (data.evidence_quotes as string[]) || [],
+        timestamp: (data.timestamp as number) || Date.now(),
+      };
+
+      setOtpState('URGENT_INTERVENTION');
+      setActiveOtpIntervention(interventionEvent);
+      setIsWarningDismissed(false);
+      setCurrentRiskLevel('HIGH_RISK');
+
+      announceAudibleIntervention(interventionEvent.spoken_text, interventionEvent.language);
+    } else if (msgType === 'warning') {
+      const warn: LiveWarning = {
+        type: 'warning',
+        severity: (data.severity as 'CRITICAL' | 'HIGH') || 'HIGH',
+        title: (data.title as string) || 'SCAM ALERT',
+        message: (data.message as string) || 'Manipulative tactics detected.',
+        evidence_quotes: (data.evidence_quotes as string[]) || [],
+        timestamp: (data.timestamp as number) || Date.now(),
+        otp_state: (data.otp_state as OtpRiskState) || 'OTP_RISK_DETECTED',
+        spoken_text: (data.spoken_text as string) || undefined,
+      };
+
+      setActiveWarning(warn);
+      announceAudibleWarning(warn.title, warn.spoken_text || warn.message);
+    }
+  };
+
+  // Toggle pause monitoring
   const togglePauseMonitoring = () => {
     if (!isMonitoring) return;
     const nextPaused = !isPaused;
@@ -288,6 +794,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
     }
   };
 
+  // Reset live session
   const handleResetSession = () => {
     stopLiveMonitoring();
     setTurns([]);
@@ -298,578 +805,152 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
     setIsWarningDismissed(false);
     setOtpState('IDLE');
     setFinalAssessment(null);
-    setCallerIntel(null);
-    setPhoneValidationError(null);
-    setLookupError(null);
     setSessionDuration(0);
-    lastWarningFingerprintRef.current = '';
   };
 
-  // References
-  const wsRef = useRef<WebSocket | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animFrameRef = useRef<number | null>(null);
-  const speechRecognizerRef = useRef<SpeechRecognitionLike | null>(null);
-  const timerIntervalRef = useRef<number | null>(null);
-  const dialogueEndRef = useRef<HTMLDivElement | null>(null);
-  const simulationTimerRef = useRef<number | null>(null);
-
-  // Scroll to bottom of turns automatically
-  useEffect(() => {
-    dialogueEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [turns]);
-
-  // Audio Level Meter Loop
-  const updateAudioMeter = () => {
-    if (!analyserRef.current) return;
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-    analyserRef.current.getByteFrequencyData(dataArray);
-
-    let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-      sum += dataArray[i];
-    }
-    const average = sum / dataArray.length;
-    // Map average (0 - 128) to 0 - 100 percentage
-    const level = Math.min(100, Math.round((average / 60) * 100));
-    setMicAudioLevel(level);
-
-    animFrameRef.current = requestAnimationFrame(updateAudioMeter);
-  };
-
-  // Start live monitoring with microphone + WebSocket
-  const startLiveMonitoring = async () => {
-    setMicError(null);
-    setActiveWarning(null);
-    setActiveOtpIntervention(null);
-    setIsWarningDismissed(false);
-    setOtpState('CONNECTING');
-    setTurns([]);
-    setCurrentScore(0);
-    setCurrentRiskLevel('LOW_RISK');
-    setFinalAssessment(null);
-    setConnectionStatus('connecting');
-
-    try {
-      // 1. Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      mediaStreamRef.current = stream;
-
-      // 2. Set up Web Audio API visualizer
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof window.AudioContext }).webkitAudioContext;
-      if (AudioCtx) {
-        const audioCtx = new AudioCtx();
-        const source = audioCtx.createMediaStreamSource(stream);
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        audioContextRef.current = audioCtx;
-        analyserRef.current = analyser;
-        updateAudioMeter();
-      }
-
-      // 3. Connect to ElderShield live WebSocket
-      const wsUrl = getLiveCallWsUrl();
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setConnectionStatus('connected');
-        setOtpState('MONITORING');
-        setIsMonitoring(true);
-        setSessionDuration(0);
-
-        // Start session timer
-        timerIntervalRef.current = window.setInterval(() => {
-          setSessionDuration((prev) => prev + 1);
-        }, 1000);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'risk_update') {
-            const update = data as LiveRiskUpdate;
-            setCurrentScore(update.risk_score);
-            setCurrentRiskLevel(update.risk_level);
-            if (update.otp_state) {
-              setOtpState(update.otp_state);
-            }
-
-            if (update.urgent_intervention_required && update.intervention_spoken_text) {
-              const interventionEvt: OtpInterventionEvent = {
-                type: 'otp_intervention',
-                event_id: update.event_id || `evt_${Date.now()}`,
-                session_id: update.session_id,
-                otp_state: update.otp_state || 'URGENT_INTERVENTION',
-                heading: update.intervention_heading || 'STOP! DO NOT SHARE YOUR OTP',
-                message: update.intervention_spoken_text,
-                spoken_text: update.intervention_spoken_text,
-                language: selectedLanguage.split('-')[0] || 'en',
-                evidence_quotes: update.reasons || [],
-                timestamp: Date.now(),
-              };
-              setActiveOtpIntervention(interventionEvt);
-              setIsWarningDismissed(false);
-              announceAudibleIntervention(interventionEvt.spoken_text, interventionEvt.language);
-            }
-
-            // Update turn list
-            setTurns((prev) => {
-              const existingIdx = prev.findIndex((t) => t.turnNumber === update.turn_number);
-              const updatedTurn: LiveTurn = {
-                id: `turn_${update.turn_number}`,
-                turnNumber: update.turn_number,
-                speaker: update.speaker as 'Caller' | 'Senior',
-                text: update.text,
-                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                score: update.risk_score,
-                level: update.risk_level,
-                detectedSignals: update.reasons,
-                isFinal: update.is_final,
-              };
-
-              if (existingIdx >= 0) {
-                const nextTurns = [...prev];
-                nextTurns[existingIdx] = updatedTurn;
-                return nextTurns;
-              }
-              return [...prev, updatedTurn];
-            });
-
-          } else if (data.type === 'otp_intervention') {
-            const otpEvt = data as OtpInterventionEvent;
-            setOtpState(otpEvt.otp_state);
-            setActiveOtpIntervention(otpEvt);
-            setIsWarningDismissed(false);
-            announceAudibleIntervention(otpEvt.spoken_text, otpEvt.language);
-          } else if (data.type === 'warning') {
-            const warning = data as LiveWarning;
-            setActiveWarning(warning);
-            if (warning.otp_state) {
-              setOtpState(warning.otp_state);
-            }
-            if (warning.spoken_text) {
-              announceAudibleIntervention(warning.spoken_text, warning.language);
-            } else if (warning.severity === 'CRITICAL' || warning.otp_state === 'URGENT_INTERVENTION') {
-              announceAudibleWarning(warning.title, warning.message);
-            }
-          } else if (data.type === 'caller_intelligence') {
-            setCallerIntel(data.caller_data as CallerIntelligenceResult);
-          } else if (data.type === 'session_summary') {
-            // Received final summary
-          }
-        } catch (e) {
-          console.error('Error handling WebSocket message:', e);
-        }
-      };
-
-      ws.onerror = (e) => {
-        console.warn('WebSocket error, falling back to local speech recognition:', e);
-        setConnectionStatus('disconnected');
-        setOtpState((prev) => (prev === 'IDLE' ? 'IDLE' : 'ERROR'));
-      };
-
-      ws.onclose = () => {
-        setConnectionStatus('disconnected');
-        setOtpState((prev) => (prev === 'IDLE' ? 'IDLE' : 'RECONNECTING'));
-      };
-
-      // 4. Set up Web Speech API for real-time streaming speech recognition
-      const winWithSpeech = window as unknown as WindowWithSpeech;
-      const SpeechRecognitionConstructor = winWithSpeech.SpeechRecognition || winWithSpeech.webkitSpeechRecognition;
-
-      if (SpeechRecognitionConstructor) {
-        const recognition = new SpeechRecognitionConstructor();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = selectedLanguage;
-
-        let currentTurnCounter = 1;
-
-        recognition.onresult = (evt: SpeechRecognitionEventLike) => {
-          if (isPausedRef.current) return;
-          for (let i = evt.resultIndex; i < evt.results.length; i++) {
-            const res = evt.results[i];
-            const transcriptText = res[0].transcript.trim();
-            const isFinal = res.isFinal;
-
-            if (transcriptText) {
-              // Send speech segment to backend WebSocket
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                  type: 'transcript_segment',
-                  speaker: 'Caller',
-                  text: transcriptText,
-                  is_final: isFinal,
-                  client_turn_start_ms: performance.now(),
-                }));
-              } else {
-                // If WS disconnected, do local turn display
-                setTurns((prev) => {
-                  const existingIdx = prev.findIndex((t) => t.turnNumber === currentTurnCounter);
-                  const newTurn: LiveTurn = {
-                    id: `local_${currentTurnCounter}`,
-                    turnNumber: currentTurnCounter,
-                    speaker: 'Caller',
-                    text: transcriptText,
-                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                    isFinal: isFinal,
-                  };
-                  if (existingIdx >= 0) {
-                    const updated = [...prev];
-                    updated[existingIdx] = newTurn;
-                    return updated;
-                  }
-                  return [...prev, newTurn];
-                });
-              }
-
-              if (isFinal) {
-                currentTurnCounter++;
-              }
-            }
-          }
-        };
-
-        recognition.onerror = (err) => {
-          console.warn('Speech recognition status:', err);
-        };
-
-        recognition.onend = () => {
-          // Restart speech recognition if still monitoring
-          if (mediaStreamRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
-            try {
-              recognition.start();
-            } catch {
-              // ignore
-            }
-          }
-        };
-
-        recognition.start();
-        speechRecognizerRef.current = recognition;
-      }
-
-      // 5. Set up MediaRecorder to capture audio slices and send binary chunks
-      try {
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-        mediaRecorderRef.current = mediaRecorder;
-        let sequence = 1;
-
-        mediaRecorder.ondataavailable = async (e) => {
-          if (e.data && e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-            const arrayBuffer = await e.data.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            let binary = '';
-            for (let i = 0; i < uint8Array.byteLength; i++) {
-              binary += String.fromCharCode(uint8Array[i]);
-            }
-            const base64Chunk = btoa(binary);
-
-            ws.send(JSON.stringify({
-              type: 'audio_chunk',
-              sequence_id: sequence++,
-              chunk: base64Chunk,
-            }));
-          }
-        };
-
-        mediaRecorder.start(1500); // 1.5s slice intervals
-      } catch (e) {
-        console.warn('MediaRecorder opus stream not supported in this environment, using Speech recognition.', e);
-      }
-
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Microphone permission denied or audio input unavailable.';
-      setMicError(msg);
-      stopLiveMonitoring();
-    }
-  };
-
-  // Stop live monitoring & finalize session
-  const stopLiveMonitoring = async () => {
-    setIsMonitoring(false);
-    setIsSimulating(false);
-    setOtpState('IDLE');
-
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-
-    if (simulationTimerRef.current) {
-      clearInterval(simulationTimerRef.current);
-      simulationTimerRef.current = null;
-    }
-
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
-
-    setMicAudioLevel(0);
-
-    // Stop speech recognition
-    if (speechRecognizerRef.current) {
-      try {
-        speechRecognizerRef.current.stop();
-      } catch {
-        // ignore
-      }
-      speechRecognizerRef.current = null;
-    }
-
-    // Stop MediaRecorder
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {
-        // ignore
-      }
-      mediaRecorderRef.current = null;
-    }
-
-    // Stop mic stream tracks
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-
-    // Close AudioContext
-    if (audioContextRef.current) {
-      try {
-        audioContextRef.current.close();
-      } catch {
-        // ignore
-      }
-      audioContextRef.current = null;
-    }
-
-    // Send stop to WebSocket
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(JSON.stringify({ type: 'stop' }));
-        setTimeout(() => {
-          wsRef.current?.close();
-        }, 500);
-      } catch {
-        // ignore
-      }
-    }
-
-    setConnectionStatus('idle');
-
-    // If turns were collected, run a final comprehensive analysis through backend to generate the dossier
-    if (turns.length > 0) {
-      try {
-        const fullTranscript = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
-        const assessment = await analyzeConversation(fullTranscript);
-        setFinalAssessment(assessment);
-      } catch (e) {
-        console.warn('Could not compile final dossier:', e);
-      }
-    }
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopLiveMonitoring();
-    };
-  }, []);
-
-  // Run deterministic simulation of live calls
-  const runSimulation = (scenarioId: string) => {
+  // Run benchmark simulation
+  const handleRunSimulation = async (sim: typeof SIMULATED_CALLS[0]) => {
     stopLiveMonitoring();
-    const sim = SIMULATED_CALLS.find((s) => s.id === scenarioId);
-    if (!sim) return;
-
-    setActiveWarning(null);
-    setActiveOtpIntervention(null);
-    setIsWarningDismissed(false);
-    setOtpState('MONITORING');
+    setIsSimulating(true);
     setTurns([]);
     setCurrentScore(0);
     setCurrentRiskLevel('LOW_RISK');
-    setFinalAssessment(null);
-    setIsSimulating(true);
+    setActiveWarning(null);
+    setActiveOtpIntervention(null);
+    setIsWarningDismissed(false);
+    setConnectionStatus('connected');
     setSessionDuration(0);
 
-    // Start timer
-    timerIntervalRef.current = window.setInterval(() => {
-      setSessionDuration((prev) => prev + 1);
-    }, 1000);
+    // Play turns with staggered intervals
+    for (let i = 0; i < sim.turns.length; i++) {
+      const turnItem = sim.turns[i];
+      const turnNum = i + 1;
 
-    let idx = 0;
-    const simTurns = sim.turns;
+      const newTurn: LiveTurn = {
+        id: `sim_turn_${turnNum}_${Date.now()}`,
+        turnNumber: turnNum,
+        speaker: turnItem.speaker,
+        text: turnItem.text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        isFinal: true,
+      };
 
-    const playNextTurn = async () => {
-      if (idx >= simTurns.length) {
-        setIsSimulating(false);
-        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      setTurns((prev) => [...prev, newTurn]);
 
-        // Compile final assessment
-        const transcriptText = simTurns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
-        try {
-          const assessment = await analyzeConversation(transcriptText);
-          setFinalAssessment(assessment);
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
-      const turnData = simTurns[idx];
-      const partialTurns = simTurns.slice(0, idx + 1);
-      const partialTranscript = partialTurns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
-
+      // Analyze accumulated turns with backend
+      const transcriptSoFar = [...sim.turns.slice(0, i + 1)].map((t) => `${t.speaker}: ${t.text}`).join('\n');
       try {
-        // Run progression evaluate
-        const progression = await analyzeProgression(partialTranscript);
-        const lastTurnEval = progression.turns[progression.turns.length - 1];
+        const assessment = await analyzeConversation(transcriptSoFar);
+        setCurrentScore(assessment.risk_score);
+        setCurrentRiskLevel(assessment.risk_level);
 
-        setCurrentScore(progression.final_risk_score);
-        setCurrentRiskLevel(progression.final_risk_level);
-        if (progression.otp_state) {
-          setOtpState(progression.otp_state);
+        if (assessment.otp_state) {
+          setOtpState(assessment.otp_state);
         }
 
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `sim_${idx + 1}`,
-            turnNumber: idx + 1,
-            speaker: turnData.speaker,
-            text: turnData.text,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            score: lastTurnEval?.cumulative_risk_score ?? progression.final_risk_score,
-            level: lastTurnEval?.turn_risk_level ?? progression.final_risk_level,
-            detectedSignals: lastTurnEval?.newly_detected_signals ?? [],
-            isFinal: true,
-          },
-        ]);
-
-        if (progression.urgent_intervention_required || progression.otp_state === 'URGENT_INTERVENTION') {
-          const otpEvt: OtpInterventionEvent = {
+        if (assessment.urgent_intervention_required) {
+          setOtpState('URGENT_INTERVENTION');
+          const interventionEvent: OtpInterventionEvent = {
             type: 'otp_intervention',
-            event_id: progression.event_id || `sim_${idx + 1}`,
-            session_id: `sim_session_${Date.now()}`,
-            otp_state: progression.otp_state || 'URGENT_INTERVENTION',
-            heading: progression.intervention_heading || 'STOP! DO NOT SHARE YOUR OTP',
-            message: progression.intervention_spoken_text || 'STOP! Do not share your OTP. Never tell anyone your verification code. End the call if they are pressuring you.',
-            spoken_text: progression.intervention_spoken_text || 'STOP! Do not share your OTP. Never tell anyone your verification code. End the call if they are pressuring you.',
-            language: selectedLanguage.split('-')[0] || 'en',
-            evidence_quotes: [turnData.text],
+            event_id: assessment.event_id || `sim_${Date.now()}`,
+            session_id: `sim_session_${sim.id}`,
+            otp_state: 'URGENT_INTERVENTION',
+            heading: assessment.intervention_heading || 'DO NOT SHARE YOUR OTP',
+            message: assessment.recommended_action || 'Never tell anyone your verification code.',
+            spoken_text: assessment.intervention_spoken_text || 'Stop! Do not share your OTP code.',
+            language: assessment.intervention_language || 'en',
+            evidence_quotes: assessment.evidence.map((e) => e.exact_quote).slice(0, 3),
             timestamp: Date.now(),
           };
-          setActiveOtpIntervention(otpEvt);
-          setIsWarningDismissed(false);
-          announceAudibleIntervention(otpEvt.spoken_text, otpEvt.language);
-        } else if (progression.final_risk_level === 'HIGH_RISK') {
+          setActiveOtpIntervention(interventionEvent);
+          announceAudibleIntervention(interventionEvent.spoken_text, interventionEvent.language);
+        } else if (assessment.risk_level === 'HIGH_RISK') {
           setActiveWarning({
             type: 'warning',
             severity: 'CRITICAL',
-            title: 'URGENT FRAUD ALERT',
-            message: progression.reasons[0] || 'Predatory urgency and credential/transfer demands detected.',
-            evidence_quotes: [turnData.text],
+            title: 'URGENT SCAM DETECTED',
+            message: assessment.recommended_action,
+            evidence_quotes: assessment.evidence.map((e) => e.exact_quote).slice(0, 2),
             timestamp: Date.now(),
           });
-          if (soundAlertsEnabled) {
-            playRiskAlert('HIGH_RISK');
-          }
+          announceAudibleWarning('URGENT SCAM DETECTED', assessment.recommended_action);
         }
-      } catch (err) {
-        console.error('Simulation step error:', err);
+
+        if (i === sim.turns.length - 1) {
+          setFinalAssessment(assessment);
+        }
+      } catch (e) {
+        console.warn('Simulation evaluation error', e);
       }
 
-      idx++;
-      simulationTimerRef.current = window.setTimeout(playNextTurn, 2200);
-    };
+      await new Promise((resolve) => setTimeout(resolve, 1400));
+    }
 
-    simulationTimerRef.current = window.setTimeout(playNextTurn, 600);
+    setIsSimulating(false);
   };
 
-  // Handle prerecorded audio file upload
+  // Handle raw audio recording file upload
   const handleAudioUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setIsUploadingAudio(true);
     setAudioUploadFeedback(null);
-    setActiveWarning(null);
 
     try {
-      setAudioUploadFeedback(`Transcribing audio with faster-whisper (${(file.size / 1024).toFixed(1)} KB)...`);
-      const response = await analyzeAudioFile(file, selectedLanguage.split('-')[0] || 'auto');
+      const res = await analyzeAudioFile(file);
+      setAudioUploadFeedback(
+        `Transcribed ${res.audio_metrics.duration_seconds}s audio via faster-whisper in ${res.audio_metrics.transcription_latency_ms}ms.`
+      );
 
-      // Populate live monitor with the transcribed turns
-      const assessment = response.risk_assessment;
-      setFinalAssessment(assessment);
+      // Populate turns from faster-whisper segments or raw transcript
+      if (res.segments && res.segments.length > 0) {
+        const segTurns: LiveTurn[] = res.segments.map((seg, idx) => ({
+          id: `upload_seg_${idx}_${Date.now()}`,
+          turnNumber: idx + 1,
+          speaker: 'Caller',
+          text: seg.text,
+          timestamp: `${seg.start.toFixed(1)}s – ${seg.end.toFixed(1)}s`,
+          isFinal: true,
+        }));
+        setTurns(segTurns);
+      } else {
+        const rawText = res.transcript || '(No speech detected in audio file)';
+        setTurns([
+          {
+            id: `upload_1_${Date.now()}`,
+            turnNumber: 1,
+            speaker: 'Caller',
+            text: rawText,
+            timestamp: new Date().toLocaleTimeString(),
+            isFinal: true,
+          },
+        ]);
+      }
+
+      const assessment = res.risk_assessment;
       setCurrentScore(assessment.risk_score);
       setCurrentRiskLevel(assessment.risk_level);
+      setFinalAssessment(assessment);
 
-      const parsedTurns: LiveTurn[] = (assessment.turn_progression || []).map((t, idx) => ({
-        id: `audio_${idx + 1}`,
-        turnNumber: t.turn_number,
-        speaker: t.speaker as 'Caller' | 'Senior',
-        text: t.text,
-        timestamp: `${(idx * 4)}s`,
-        score: t.cumulative_risk_score,
-        level: t.turn_risk_level,
-        detectedSignals: t.newly_detected_signals,
-        isFinal: true,
-      }));
-
-      setTurns(parsedTurns);
-
-      if (assessment.otp_state) {
-        setOtpState(assessment.otp_state);
-      }
-
-      if (assessment.urgent_intervention_required || assessment.otp_state === 'URGENT_INTERVENTION') {
-        const otpEvt: OtpInterventionEvent = {
+      if (assessment.urgent_intervention_required) {
+        setOtpState('URGENT_INTERVENTION');
+        setActiveOtpIntervention({
           type: 'otp_intervention',
-          event_id: assessment.event_id || `audio_${Date.now()}`,
-          session_id: `upload_${Date.now()}`,
-          otp_state: assessment.otp_state || 'URGENT_INTERVENTION',
-          heading: assessment.intervention_heading || 'STOP! DO NOT SHARE YOUR OTP',
-          message: assessment.intervention_spoken_text || 'STOP! Do not share your OTP. Never tell anyone your verification code. End the call if they are pressuring you.',
-          spoken_text: assessment.intervention_spoken_text || 'STOP! Do not share your OTP. Never tell anyone your verification code. End the call if they are pressuring you.',
-          language: assessment.intervention_language || selectedLanguage.split('-')[0] || 'en',
-          evidence_quotes: assessment.evidence.map((e) => e.exact_quote).slice(0, 2),
-          timestamp: Date.now(),
-        };
-        setActiveOtpIntervention(otpEvt);
-        setIsWarningDismissed(false);
-        announceAudibleIntervention(otpEvt.spoken_text, otpEvt.language);
-      } else if (assessment.risk_level === 'HIGH_RISK') {
-        setActiveWarning({
-          type: 'warning',
-          severity: 'CRITICAL',
-          title: 'HIGH-RISK CALL DETECTED FROM AUDIO RECORDING',
-          message: assessment.recommended_action,
-          evidence_quotes: assessment.evidence.map((e) => e.exact_quote).slice(0, 2),
+          event_id: assessment.event_id || `upload_${Date.now()}`,
+          session_id: `upload_session_${Date.now()}`,
+          otp_state: 'URGENT_INTERVENTION',
+          heading: assessment.intervention_heading || 'DO NOT SHARE YOUR OTP',
+          message: assessment.recommended_action || 'Never tell anyone your verification code.',
+          spoken_text: assessment.intervention_spoken_text || 'Stop! Do not share your OTP code.',
+          language: assessment.intervention_language || 'en',
+          evidence_quotes: assessment.evidence.map((e) => e.exact_quote).slice(0, 3),
           timestamp: Date.now(),
         });
-        if (soundAlertsEnabled) {
-          playRiskAlert('HIGH_RISK');
-        }
+        announceAudibleIntervention(assessment.intervention_spoken_text || 'Stop! Do not share your OTP code.');
       }
-
-      setAudioUploadFeedback(`Audio processed successfully! Duration: ${response.audio_metrics.duration_seconds}s • Model latency: ${response.audio_metrics.transcription_latency_ms}ms.`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to analyze audio file';
+      const msg = err instanceof Error ? err.message : 'Audio upload evaluation failed';
       setAudioUploadFeedback(`Error: ${msg}`);
     } finally {
       setIsUploadingAudio(false);
@@ -877,1653 +958,689 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
     }
   };
 
-  // Helper format seconds to mm:ss
+  // Format session duration mm:ss
   const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
-
-  // Helper color for score
-  const getScoreColor = (score: number) => {
-    if (score >= 66) return 'var(--risk-high)';
-    if (score >= 26) return 'var(--risk-suspicious)';
-    return 'var(--risk-low)';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Top Banner / Heading */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '16px',
-        padding: '20px 24px',
-        backgroundColor: 'var(--bg-surface)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 'var(--radius-lg)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '12px',
-            backgroundColor: isMonitoring ? 'rgba(239, 68, 68, 0.15)' : 'rgba(6, 182, 212, 0.15)',
-            border: `1.5px solid ${isMonitoring ? 'var(--risk-high)' : 'var(--accent-cyan)'}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: isMonitoring ? 'var(--risk-high)' : 'var(--accent-cyan)',
-            position: 'relative',
-          }}>
-            {isMonitoring ? <Radio size={26} className="animate-pulse" /> : <Mic size={26} />}
-            {isMonitoring && (
-              <span style={{
-                position: 'absolute',
-                top: '-4px',
-                right: '-4px',
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: 'var(--risk-high)',
-                boxShadow: '0 0 8px var(--risk-high)',
-              }} />
-            )}
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                Live Call Scam Monitor
-              </h2>
-              <span style={{
-                fontSize: '0.74rem',
-                fontWeight: 800,
-                textTransform: 'uppercase',
-                padding: '4px 10px',
-                borderRadius: '6px',
-                backgroundColor: isMonitoring
-                  ? (isPaused ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)')
-                  : isSimulating
-                  ? 'rgba(168, 85, 247, 0.2)'
-                  : 'rgba(16, 185, 129, 0.15)',
-                color: isMonitoring
-                  ? (isPaused ? '#fcd34d' : '#fca5a5')
-                  : isSimulating
-                  ? '#d8b4fe'
-                  : '#6ee7b7',
-                border: `1.5px solid ${
-                  isMonitoring
-                    ? (isPaused ? 'var(--risk-suspicious-border)' : 'var(--risk-high-border)')
-                    : isSimulating
-                    ? 'rgba(168, 85, 247, 0.5)'
-                    : 'var(--risk-low-border)'
-                }`,
-              }}>
-                {isMonitoring
-                  ? (isPaused ? '⏸️ LIVE CALL PAUSED' : '🔴 LIVE CALL (REAL-TIME AUDIO MONITORING)')
-                  : isSimulating
-                  ? '🟣 DEMO SIMULATION (SCRIPTED SCENARIO)'
-                  : '⚪ STANDBY (READY TO LISTEN)'}
-              </span>
-
-              {/* OTP Disclosure Prevention State Machine Pill */}
-              <span style={{
-                fontSize: '0.74rem',
-                fontWeight: 800,
-                textTransform: 'uppercase',
-                padding: '4px 10px',
-                borderRadius: '6px',
-                backgroundColor:
-                  otpState === 'URGENT_INTERVENTION' ? 'rgba(239, 68, 68, 0.25)' :
-                  otpState === 'OTP_RISK_DETECTED' ? 'rgba(245, 158, 11, 0.2)' :
-                  otpState === 'SAFE_OR_INCONCLUSIVE' ? 'rgba(16, 185, 129, 0.15)' :
-                  otpState === 'MONITORING' ? 'rgba(6, 182, 212, 0.15)' :
-                  'rgba(100, 116, 139, 0.2)',
-                color:
-                  otpState === 'URGENT_INTERVENTION' ? '#fca5a5' :
-                  otpState === 'OTP_RISK_DETECTED' ? '#fcd34d' :
-                  otpState === 'SAFE_OR_INCONCLUSIVE' ? '#6ee7b7' :
-                  otpState === 'MONITORING' ? '#67e8f9' :
-                  '#94a3b8',
-                border: `1.5px solid ${
-                  otpState === 'URGENT_INTERVENTION' ? 'var(--risk-high-border)' :
-                  otpState === 'OTP_RISK_DETECTED' ? 'var(--risk-suspicious-border)' :
-                  otpState === 'SAFE_OR_INCONCLUSIVE' ? 'var(--risk-low-border)' :
-                  otpState === 'MONITORING' ? 'rgba(6, 182, 212, 0.5)' :
-                  'var(--border-subtle)'
-                }`,
-              }}>
-                {otpState === 'IDLE' && '🛡️ OTP SHIELD: IDLE'}
-                {otpState === 'CONNECTING' && '🟡 OTP SHIELD: CONNECTING'}
-                {otpState === 'MONITORING' && '🟢 OTP SHIELD: SILENT MONITORING'}
-                {otpState === 'OTP_RISK_DETECTED' && '🟠 OTP SHIELD: OTP RISK DETECTED'}
-                {otpState === 'URGENT_INTERVENTION' && '🚨 OTP SHIELD: URGENT INTERVENTION'}
-                {otpState === 'SAFE_OR_INCONCLUSIVE' && '🟢 OTP SHIELD: SAFE / NORMAL'}
-                {otpState === 'ERROR' && '⚠️ OTP SHIELD: ERROR'}
-                {otpState === 'RECONNECTING' && '🔄 OTP SHIELD: RECONNECTING'}
-              </span>
-            </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Sub-second conversational behavioral scanning. Protects elderly seniors during ongoing calls before credentials or money are transferred.
-            </p>
-          </div>
-        </div>
-
-        {/* Live Call Duration & Emergency Button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          {(isMonitoring || isSimulating) && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 14px',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.9rem',
-              fontWeight: 700,
-              color: 'var(--accent-cyan)',
-            }}>
-              <Clock size={16} />
-              <span>{formatTime(sessionDuration)}</span>
-            </div>
-          )}
-
-          <a
-            href="tel:1930"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 18px',
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
-              border: '1.5px solid var(--risk-high)',
-              borderRadius: 'var(--radius-md)',
-              color: '#fca5a5',
-              textDecoration: 'none',
-              fontWeight: 800,
-              fontSize: '0.92rem',
-            }}
-          >
-            <PhoneCall size={18} color="#ef4444" />
-            <span>Emergency Cyber Helpline: <strong>1930</strong></span>
-          </a>
-        </div>
-      </div>
-
-      {/* DEDICATED ACTIONABLE OTP INTERVENTION BANNER */}
-      {activeOtpIntervention && !isWarningDismissed && (
+      {/* SECTION 7: DEDICATED HIGH-RISK OTP DISCLOSURE PREVENTION BANNER */}
+      {(otpState === 'URGENT_INTERVENTION' || activeOtpIntervention) && !isWarningDismissed && (
         <div
           role="alert"
           aria-live="assertive"
           style={{
-            backgroundColor: '#450a0a',
-            border: '3px solid #ef4444',
-            borderRadius: 'var(--radius-lg)',
             padding: '24px 28px',
-            boxShadow: '0 0 35px rgba(239, 68, 68, 0.45)',
-            animation: 'pulse 2s infinite',
+            backgroundColor: 'var(--high-risk-bg)',
+            border: '2px solid var(--risk-high)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: 'var(--shadow-elevated)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '18px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '18px' }}>
-            <div style={{
-              width: '52px',
-              height: '52px',
-              borderRadius: '50%',
-              backgroundColor: '#ef4444',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              flexShrink: 0,
-            }}>
-              <ShieldAlert size={32} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                <h3 style={{
-                  fontSize: '1.45rem',
-                  fontWeight: 900,
-                  color: '#fee2e2',
-                  letterSpacing: '0.02em',
-                  margin: 0,
-                }}>
-                  🛑 {activeOtpIntervention.heading}
-                </h3>
-                <span style={{
-                  fontSize: '0.8rem',
-                  fontWeight: 800,
-                  backgroundColor: 'rgba(239, 68, 68, 0.3)',
-                  border: '1px solid #ef4444',
-                  borderRadius: '6px',
-                  color: '#fecaca',
-                  padding: '3px 8px',
-                }}>
-                  HIGH SEVERITY INTERVENTION
-                </span>
-              </div>
-
-              <p style={{
-                fontSize: '1.25rem',
-                fontWeight: 800,
-                color: '#ffffff',
-                margin: '12px 0 14px 0',
-                lineHeight: 1.45,
-                textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-              }}>
-                {activeOtpIntervention.spoken_text}
-              </p>
-
-              {activeOtpIntervention.evidence_quotes && activeOtpIntervention.evidence_quotes.length > 0 && (
-                <div style={{
-                  padding: '12px 16px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.55)',
-                  borderRadius: 'var(--radius-sm)',
-                  borderLeft: '4px solid #ef4444',
-                  marginBottom: '16px',
-                }}>
-                  <div style={{ fontSize: '0.82rem', color: '#fca5a5', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Flagged Predator Evidence:
-                  </div>
-                  <div style={{ fontSize: '1rem', color: '#f8fafc', fontStyle: 'italic', marginTop: '4px' }}>
-                    "{activeOtpIntervention.evidence_quotes[0]}"
-                  </div>
-                </div>
-              )}
-
-              <div style={{
-                padding: '12px 16px',
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                borderRadius: 'var(--radius-sm)',
-                marginBottom: '18px',
-                fontSize: '0.95rem',
-                color: '#fef2f2',
-                lineHeight: 1.5,
-              }}>
-                <div style={{ fontWeight: 800, marginBottom: '4px' }}>Senior Safety Rules:</div>
-                <ul style={{ margin: 0, paddingLeft: '20px' }}>
-                  <li><strong>Never tell anyone your verification code:</strong> Bank managers and police officers will NEVER demand your OTP or PIN.</li>
-                  <li><strong>End the call if pressured:</strong> Fraudsters use urgency and fake arrest threats to confuse you.</li>
-                </ul>
-              </div>
-
-              {/* Protective Action Buttons */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={stopLiveMonitoring}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '12px 22px',
-                    backgroundColor: '#dc2626',
-                    border: 'none',
-                    borderRadius: 'var(--radius-md)',
-                    color: '#ffffff',
-                    fontWeight: 900,
-                    fontSize: '1rem',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
-                  }}
-                >
-                  <PhoneOff size={20} />
-                  <span>Hang Up & Terminate Call Protection</span>
-                </button>
-
-                <a
-                  href="tel:1930"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '12px 20px',
-                    backgroundColor: '#1e293b',
-                    border: '1.5px solid #ef4444',
-                    borderRadius: 'var(--radius-md)',
-                    color: '#ffffff',
-                    fontWeight: 800,
-                    fontSize: '0.95rem',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <PhoneCall size={18} color="#ef4444" />
-                  <span>Call Cyber Helpline (1930)</span>
-                </a>
-
-                <button
-                  onClick={() => setIsWarningDismissed(true)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '10px 16px',
-                    backgroundColor: 'transparent',
-                    border: '1px solid #7f1d1d',
-                    borderRadius: 'var(--radius-md)',
-                    color: '#fca5a5',
-                    fontWeight: 700,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    marginLeft: 'auto',
-                  }}
-                  title="Dismiss this visual warning. Does not mute future threat alerts or lower risk score."
-                >
-                  <X size={16} />
-                  <span>Dismiss Warning (I will keep my secret safe)</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* GENERAL HIGH RISK WARNING OVERLAY / BANNER */}
-      {!activeOtpIntervention && activeWarning && !isWarningDismissed && (
-        <div style={{
-          backgroundColor: 'rgba(239, 68, 68, 0.22)',
-          border: '2.5px solid var(--risk-high)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '20px 24px',
-          boxShadow: '0 0 30px rgba(239, 68, 68, 0.35)',
-          animation: 'pulse 2s infinite',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-            <div style={{
-              width: '46px',
-              height: '46px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--risk-high)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              flexShrink: 0,
-            }}>
-              <AlertTriangle size={28} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fca5a5', letterSpacing: '0.02em', margin: 0 }}>
-                  🚨 URGENT SCAM WARNING: SUSPECTED FRAUD DETECTED IN THIS CALL!
-                </h3>
-                <button
-                  onClick={() => setIsWarningDismissed(true)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '4px 8px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    color: '#fca5a5',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                  }}
-                  title="Dismiss warning banner"
-                >
-                  <X size={16} />
-                  <span>Dismiss</span>
-                </button>
-              </div>
-              <p style={{
-                fontSize: '1.05rem',
-                fontWeight: 700,
-                color: '#ffffff',
-                margin: '8px 0 12px 0',
-                lineHeight: 1.4,
-              }}>
-                {activeWarning.message}
-              </p>
-
-              {activeWarning.evidence_quotes.length > 0 && (
-                <div style={{
-                  padding: '10px 14px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                  borderRadius: 'var(--radius-sm)',
-                  borderLeft: '4px solid var(--risk-high)',
-                  marginBottom: '14px',
-                }}>
-                  <div style={{ fontSize: '0.78rem', color: '#fca5a5', fontWeight: 700, textTransform: 'uppercase' }}>
-                    Flagged Predator Statement:
-                  </div>
-                  <div style={{ fontSize: '0.95rem', color: '#f1f5f9', fontStyle: 'italic', marginTop: '2px' }}>
-                    "{activeWarning.evidence_quotes[0]}"
-                  </div>
-                </div>
-              )}
-
-              {/* Protective Action Buttons for Seniors */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={stopLiveMonitoring}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 20px',
-                    backgroundColor: 'var(--risk-high)',
-                    border: 'none',
-                    borderRadius: 'var(--radius-md)',
-                    color: '#ffffff',
-                    fontWeight: 800,
-                    fontSize: '0.95rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <PhoneOff size={18} />
-                  <span>Hang Up & Terminate Call Protection</span>
-                </button>
-
-                <a
-                  href="tel:1930"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 18px',
-                    backgroundColor: '#1e293b',
-                    border: '1px solid #475569',
-                    borderRadius: 'var(--radius-md)',
-                    color: '#ffffff',
-                    fontWeight: 700,
-                    fontSize: '0.9rem',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <PhoneCall size={16} color="#ef4444" />
-                  <span>Report Call to National Cybercrime Helpline (1930)</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Grid: Left Controls & Speedometer, Right Live Dialogue Stream */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-        gap: '24px',
-      }}>
-        {/* Left Column: Input Modes, VU Meter & Dynamic Risk Meter */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Audio Input Control Box */}
-          <div style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '22px',
-          }}>
-            <h3 style={{
-              fontSize: '1.05rem',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              marginBottom: '14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}>
-              <Activity size={18} color="var(--accent-cyan)" />
-              <span>Audio Input Controls</span>
-            </h3>
-
-            {/* Language Selection */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 600 }}>
-                Spoken Language Hint:
-              </label>
-              <select
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                disabled={isMonitoring || isSimulating}
-                style={{
-                  width: '100%',
-                  padding: '9px 12px',
-                  backgroundColor: 'var(--bg-surface-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                }}
-              >
-                <option value="en-IN">English (India / Hinglish)</option>
-                <option value="hi-IN">Hindi (हिन्दी)</option>
-                <option value="te-IN">Telugu (తెలుగు)</option>
-                <option value="en-US">English (Standard)</option>
-              </select>
-            </div>
-
-            {/* Mic Visualizer / Audio Meter */}
-            <div style={{ marginBottom: '18px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                <span>Microphone Signal Level</span>
-                <span style={{ fontWeight: 700, color: micAudioLevel > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
-                  {micAudioLevel > 0 ? `${micAudioLevel}% (Voice Detected)` : 'Inactive / Muted'}
-                </span>
-              </div>
-              <div style={{
-                height: '10px',
-                width: '100%',
-                backgroundColor: 'var(--bg-surface-elevated)',
-                borderRadius: '5px',
-                overflow: 'hidden',
-                border: '1px solid var(--border-subtle)',
-              }}>
-                <div style={{
-                  height: '100%',
-                  width: `${micAudioLevel}%`,
-                  backgroundColor: micAudioLevel > 60 ? 'var(--risk-high)' : micAudioLevel > 25 ? 'var(--accent-cyan)' : 'var(--accent-teal)',
-                  transition: 'width 0.08s ease',
-                }} />
-              </div>
-            </div>
-
-            {/* Mic Error Callout */}
-            {micError && (
-              <div style={{
-                padding: '10px 14px',
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid var(--risk-high-border)',
-                borderRadius: 'var(--radius-sm)',
-                color: '#fca5a5',
-                fontSize: '0.84rem',
-                marginBottom: '16px',
-              }}>
-                {micError}
-              </div>
-            )}
-
-            {/* Primary Action Button Group */}
-            {!isMonitoring ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button
-                  onClick={startLiveMonitoring}
-                  disabled={isSimulating || isUploadingAudio}
-                  style={{
-                    width: '100%',
-                    padding: '13px 20px',
-                    backgroundColor: 'var(--accent-cyan)',
-                    border: 'none',
-                    borderRadius: 'var(--radius-md)',
-                    color: '#080c16',
-                    fontWeight: 800,
-                    fontSize: '1rem',
-                    cursor: (isSimulating || isUploadingAudio) ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    boxShadow: '0 4px 14px rgba(6, 182, 212, 0.3)',
-                    transition: 'all 0.15s ease',
-                    opacity: (isSimulating || isUploadingAudio) ? 0.5 : 1,
-                  }}
-                >
-                  <Mic size={20} />
-                  <span>Start Live Microphone Protection</span>
-                </button>
-                {turns.length > 0 && (
-                  <button
-                    onClick={handleResetSession}
-                    style={{
-                      width: '100%',
-                      padding: '9px 16px',
-                      backgroundColor: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-md)',
-                      color: 'var(--text-secondary)',
-                      fontWeight: 700,
-                      fontSize: '0.86rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <RotateCcw size={16} />
-                    <span>Reset Dialogue & Start Fresh Call</span>
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button
-                  onClick={stopLiveMonitoring}
-                  style={{
-                    width: '100%',
-                    padding: '13px 20px',
-                    backgroundColor: 'var(--risk-high)',
-                    border: 'none',
-                    borderRadius: 'var(--radius-md)',
-                    color: '#ffffff',
-                    fontWeight: 800,
-                    fontSize: '1rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)',
-                  }}
-                >
-                  <MicOff size={20} />
-                  <span>Stop Live Call Protection</span>
-                </button>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <button
-                    onClick={togglePauseMonitoring}
-                    style={{
-                      padding: '9px 14px',
-                      backgroundColor: isPaused ? 'rgba(16, 185, 129, 0.18)' : 'rgba(245, 158, 11, 0.18)',
-                      border: `1px solid ${isPaused ? 'var(--risk-low-border)' : 'var(--risk-suspicious-border)'}`,
-                      borderRadius: 'var(--radius-md)',
-                      color: isPaused ? '#6ee7b7' : '#fcd34d',
-                      fontWeight: 700,
-                      fontSize: '0.86rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    {isPaused ? <Play size={16} /> : <Pause size={16} />}
-                    <span>{isPaused ? 'Resume Audio' : 'Pause Audio'}</span>
-                  </button>
-                  <button
-                    onClick={handleResetSession}
-                    style={{
-                      padding: '9px 14px',
-                      backgroundColor: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-md)',
-                      color: 'var(--text-secondary)',
-                      fontWeight: 700,
-                      fontSize: '0.86rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <RotateCcw size={16} />
-                    <span>Reset Call</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Divider */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              margin: '20px 0 16px 0',
-              color: 'var(--text-muted)',
-              fontSize: '0.78rem',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-            }}>
-              <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
-              <span>Or Upload Pre-Recorded Call Audio</span>
-              <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
-            </div>
-
-            {/* Audio File Upload Dropzone */}
-            <label style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '18px',
-              border: '1.5px dashed var(--border-prominent)',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              cursor: isMonitoring ? 'not-allowed' : 'pointer',
-              textAlign: 'center',
-              opacity: isMonitoring ? 0.5 : 1,
-            }}>
-              <FileAudio size={24} color="var(--accent-teal)" style={{ marginBottom: '8px' }} />
-              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                {isUploadingAudio ? 'Transcribing with faster-whisper...' : 'Upload Call Recording (.wav, .mp3, .m4a)'}
-              </span>
-              <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Runs offline ASR & extracts conversational fraud indicators
-              </span>
-              <input
-                type="file"
-                accept="audio/*"
-                onChange={handleAudioUpload}
-                disabled={isMonitoring || isUploadingAudio}
-                style={{ display: 'none' }}
-              />
-            </label>
-
-            {audioUploadFeedback && (
-              <div style={{
-                marginTop: '12px',
-                fontSize: '0.82rem',
-                color: audioUploadFeedback.startsWith('Error') ? '#fca5a5' : 'var(--accent-teal)',
-                fontWeight: 600,
-              }}>
-                {audioUploadFeedback}
-              </div>
-            )}
-          </div>
-
-          {/* Caller Identity & Institutional Spoofing Verification Card */}
-          <div style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: callerIntel?.spoofing_suspected ? '1.5px solid var(--risk-high)' : '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '22px',
-            boxShadow: callerIntel?.spoofing_suspected ? '0 0 16px rgba(239, 68, 68, 0.2)' : 'none',
-          }}>
-            <h3 style={{
-              fontSize: '1.05rem',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              marginBottom: '4px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}>
-              <UserCheck size={18} color="var(--accent-cyan)" />
-              <span>Caller Identity & Spoof Verification</span>
-            </h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-              Telecom circle mapping, ITU normalization, and official institutional conflict checks.
-            </p>
-
-            {/* Inputs */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
-                  Incoming Caller Phone Number:
-                </label>
-                <input
-                  type="text"
-                  value={callerPhone}
-                  onChange={(e) => setCallerPhone(e.target.value)}
-                  placeholder="+91 98490 12345 or 1800 1234"
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    backgroundColor: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
-                  Claimed Organization (Optional):
-                </label>
-                <input
-                  type="text"
-                  value={claimedOrg}
-                  onChange={(e) => setClaimedOrg(e.target.value)}
-                  placeholder="e.g. State Bank of India, CBI, Courier"
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    backgroundColor: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              {phoneValidationError && (
-                <div style={{
-                  padding: '8px 12px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid var(--risk-high-border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: '#fca5a5',
-                  fontSize: '0.8rem',
-                }}>
-                  {phoneValidationError}
-                </div>
-              )}
-
-              <button
-                onClick={() => handleVerifyCaller()}
-                disabled={isLookingUpCaller || !callerPhone.trim()}
-                style={{
-                  padding: '9px 16px',
-                  backgroundColor: 'var(--bg-surface-elevated)',
-                  border: '1px solid var(--accent-cyan)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--accent-cyan)',
-                  fontWeight: 700,
-                  fontSize: '0.88rem',
-                  cursor: (isLookingUpCaller || !callerPhone.trim()) ? 'not-allowed' : 'pointer',
-                  opacity: (isLookingUpCaller || !callerPhone.trim()) ? 0.5 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-              >
-                <ShieldCheck size={16} />
-                <span>{isLookingUpCaller ? 'Checking Telecom Registries...' : 'Verify Caller Number'}</span>
-              </button>
-
-              {lookupError && (
-                <div style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid var(--risk-high-border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: '#fca5a5',
-                  fontSize: '0.82rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                }}>
-                  <span>{lookupError}</span>
-                  <button
-                    onClick={() => handleVerifyCaller()}
-                    style={{
-                      alignSelf: 'flex-start',
-                      padding: '4px 10px',
-                      backgroundColor: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--risk-high-border)',
-                      borderRadius: '4px',
-                      color: '#ffffff',
-                      fontSize: '0.76rem',
-                      cursor: 'pointer',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Retry Lookup
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Quick Test Preset Buttons */}
-            <div style={{ marginBottom: '14px' }}>
-              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-                Test Scenarios:
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                <button
-                  onClick={() => {
-                    setCallerPhone('+91 99999 00001');
-                    setClaimedOrg('');
-                    handleVerifyCaller('+91 99999 00001', '');
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                    border: '1px solid var(--risk-high-border)',
-                    borderRadius: '4px',
-                    color: '#fca5a5',
-                    fontSize: '0.72rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  🚨 Confirmed Scam (+91 99999 00001)
-                </button>
-
-                <button
-                  onClick={() => {
-                    setCallerPhone('+91 98765 43210');
-                    setClaimedOrg('');
-                    handleVerifyCaller('+91 98765 43210', '');
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'rgba(148, 163, 184, 0.15)',
-                    border: '1px solid rgba(148, 163, 184, 0.3)',
-                    borderRadius: '4px',
-                    color: '#94a3b8',
-                    fontSize: '0.72rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  📱 Unknown Number (+91 98765 43210)
-                </button>
-
-                <button
-                  onClick={() => {
-                    setCallerPhone('+91 98490 12345');
-                    setClaimedOrg('State Bank of India');
-                    handleVerifyCaller('+91 98490 12345', 'State Bank of India');
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid var(--risk-high-border)',
-                    borderRadius: '4px',
-                    color: '#fca5a5',
-                    fontSize: '0.72rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  ⚠️ Spoof Mobile (SBI Claim)
-                </button>
-
-                <button
-                  onClick={() => {
-                    setCallerPhone('1800 1234');
-                    setClaimedOrg('State Bank of India');
-                    handleVerifyCaller('1800 1234', 'State Bank of India');
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                    border: '1px solid var(--risk-low-border)',
-                    borderRadius: '4px',
-                    color: '#6ee7b7',
-                    fontSize: '0.72rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  🛡️ SBI Official Toll-Free
-                </button>
-
-                <button
-                  onClick={() => {
-                    setCallerPhone('1930');
-                    setClaimedOrg('National Cybercrime');
-                    handleVerifyCaller('1930', 'National Cybercrime');
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                    border: '1px solid var(--accent-cyan)',
-                    borderRadius: '4px',
-                    color: 'var(--accent-cyan)',
-                    fontSize: '0.72rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  📞 Cyber Helpline 1930
-                </button>
-              </div>
-            </div>
-
-            {/* Caller Intelligence Result Badge & Details */}
-            {callerIntel && (() => {
-              const isConfirmedScam = callerIntel.caller_classification === 'CONFIRMED_SCAM' || callerIntel.verdict === 'CONFIRMED_SCAM';
-              const isSuspicious = callerIntel.spoofing_suspected || callerIntel.caller_classification === 'POTENTIALLY_SUSPICIOUS' || callerIntel.verdict === 'SPOOF_CONFLICT' || callerIntel.verdict === 'POTENTIAL_IDENTITY_CONFLICT';
-              const isRegistryMatch = callerIntel.is_registered_institution || callerIntel.verdict === 'KNOWN_REGISTRY_MATCH' || callerIntel.caller_classification === 'KNOWN_REGISTRY_MATCH';
-              const isInvalidFormat = !callerIntel.is_valid || callerIntel.verdict === 'INVALID_NUMBER' || callerIntel.verdict === 'INVALID_FORMAT' || callerIntel.caller_classification === 'INVALID_NUMBER';
-
-              const cardBg = isConfirmedScam
-                ? 'rgba(239, 68, 68, 0.22)'
-                : isSuspicious
-                ? 'rgba(249, 115, 22, 0.16)'
-                : isRegistryMatch
-                ? 'rgba(245, 158, 11, 0.12)'
-                : isInvalidFormat
-                ? 'rgba(244, 63, 94, 0.12)'
-                : 'var(--bg-surface-elevated)';
-
-              const cardBorder = isConfirmedScam
-                ? '1.5px solid var(--risk-high)'
-                : isSuspicious
-                ? '1.5px solid rgba(249, 115, 22, 0.5)'
-                : isRegistryMatch
-                ? '1px solid rgba(245, 158, 11, 0.4)'
-                : isInvalidFormat
-                ? '1px solid rgba(244, 63, 94, 0.35)'
-                : '1px solid var(--border-subtle)';
-
-              const badgeText = isConfirmedScam
-                ? 'CONFIRMED SCAM'
-                : isSuspicious
-                ? 'SUSPICIOUS (SPOOF RISK)'
-                : isRegistryMatch
-                ? 'KNOWN REGISTRY MATCH (UNAUTHENTICATED)'
-                : isInvalidFormat
-                ? 'INVALID PHONE NUMBER'
-                : 'NO REGISTRY MATCH (UNKNOWN NUMBER)';
-
-              const badgeBg = isConfirmedScam
-                ? '#ef4444'
-                : isSuspicious
-                ? '#f97316'
-                : isRegistryMatch
-                ? '#d97706'
-                : isInvalidFormat
-                ? '#f43f5e'
-                : 'rgba(148, 163, 184, 0.25)';
-
-              const badgeColor = isConfirmedScam || isSuspicious || isRegistryMatch || isInvalidFormat
-                ? '#ffffff'
-                : '#94a3b8';
-
-              return (
-              <div style={{
-                padding: '12px 14px',
-                backgroundColor: cardBg,
-                border: cardBorder,
-                borderRadius: 'var(--radius-md)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-                  <span style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {callerIntel.national_format || callerIntel.raw_input}
-                  </span>
-                  <span style={{
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    padding: '2px 7px',
-                    borderRadius: '4px',
-                    backgroundColor: badgeBg,
-                    color: badgeColor,
-                  }}>
-                    {badgeText}
-                  </span>
-                </div>
-
-                {/* Reputation Score & Semantic Baseline */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Caller Risk Index:</span>
-                  <span style={{
-                    fontSize: '0.8rem',
-                    fontWeight: 800,
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    backgroundColor: isConfirmedScam || isSuspicious
-                      ? 'rgba(239, 68, 68, 0.2)'
-                      : isRegistryMatch
-                      ? 'rgba(245, 158, 11, 0.2)'
-                      : 'rgba(16, 185, 129, 0.15)',
-                    color: isConfirmedScam || isSuspicious
-                      ? '#fca5a5'
-                      : isRegistryMatch
-                      ? '#fcd34d'
-                      : '#6ee7b7',
-                    border: `1px solid ${
-                      isConfirmedScam || isSuspicious
-                        ? 'var(--risk-high-border)'
-                        : isRegistryMatch
-                        ? 'rgba(245, 158, 11, 0.4)'
-                        : 'var(--risk-low-border)'
-                    }`
-                  }}>
-                    {typeof callerIntel.reputation_score === 'number' ? callerIntel.reputation_score.toFixed(1) : '30.0'} / 100
-                  </span>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    ({isConfirmedScam ? 'Cybercrime Advisory Record' : isSuspicious ? 'High Risk Spoof Conflict' : isRegistryMatch ? 'Institutional Directory Match' : isInvalidFormat ? 'Malformed Input' : 'Neutral Telecom Baseline (Unclassified)'})
-                  </span>
-                </div>
-
-                {/* Confirmed Scam Advisory Notice */}
-                {isConfirmedScam && (
-                  <div style={{
-                    padding: '8px 10px',
-                    backgroundColor: 'rgba(239, 68, 68, 0.25)',
-                    border: '1.5px solid var(--risk-high)',
-                    borderRadius: 'var(--radius-sm)',
-                    marginBottom: '8px',
-                    fontSize: '0.82rem',
-                    color: '#ffffff',
-                    fontWeight: 700,
-                    lineHeight: 1.4,
-                  }}>
-                    🚨 <strong>CONFIRMED SCAM NUMBER:</strong> This number has been officially reported and verified in scam advisories. Do not answer or engage.
-                  </div>
-                )}
-
-                {/* Neutral Number Advisory Notice */}
-                {!isConfirmedScam && !isSuspicious && !isRegistryMatch && !isInvalidFormat && (
-                  <div style={{
-                    padding: '8px 10px',
-                    backgroundColor: 'rgba(148, 163, 184, 0.1)',
-                    border: '1px solid rgba(148, 163, 184, 0.2)',
-                    borderRadius: 'var(--radius-sm)',
-                    marginBottom: '8px',
-                    fontSize: '0.78rem',
-                    color: 'var(--text-secondary)',
-                    lineHeight: 1.35,
-                  }}>
-                    ℹ️ <strong>Neutral Status:</strong> No registry match found. This caller is <em>not</em> flagged as spam or verified safe based solely on phone number. Live behavioral analysis will monitor the call dialogue for social engineering tactics.
-                  </div>
-                )}
-
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <span>📡 {callerIntel.carrier || 'National Carrier'}</span>
-                  <span>📍 {callerIntel.geographic_region || 'India'}</span>
-                  <span>🏷️ {callerIntel.number_type} line</span>
-                  {callerIntel.lookup_timestamp && (
-                    <span>⏱️ {new Date(callerIntel.lookup_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  )}
-                </div>
-
-                {/* Important Trust & Safety Warning Banner for Registry Match */}
-                {callerIntel.is_registered_institution && (
-                  <div style={{
-                    padding: '8px 10px',
-                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                    borderRadius: 'var(--radius-sm)',
-                    marginBottom: '8px',
-                    fontSize: '0.78rem',
-                    color: '#fef08a',
-                    lineHeight: 1.35,
-                  }}>
-                    ⚠️ <strong>Notice:</strong> Number matches local directory for {callerIntel.registered_organization}. <strong>This does NOT authenticate the caller.</strong> Caller ID can be spoofed over telephony networks. Verify independently using official numbers.
-                  </div>
-                )}
-
-                {/* Claimed vs Registry Match Comparison */}
-                {callerIntel.claimed_organization && (
-                  <div style={{
-                    padding: '8px 10px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                    borderRadius: 'var(--radius-sm)',
-                    marginBottom: '8px',
-                    fontSize: '0.8rem',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Claimed Organization:</span>
-                      <span style={{ fontWeight: 700, color: '#f8fafc' }}>{callerIntel.claimed_organization}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Registry Status:</span>
-                      <span style={{
-                        fontWeight: 700,
-                        color: callerIntel.is_registered_institution ? '#fbbf24' : '#f87171'
-                      }}>
-                        {callerIntel.registered_organization
-                          ? `Registry Match: ${callerIntel.registered_organization} (Unauthenticated)`
-                          : 'Unlisted Personal / Mobile Line'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {callerIntel.registered_organization && !callerIntel.claimed_organization && (
-                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24', marginBottom: '6px' }}>
-                    Listed Registry Contact: {callerIntel.registered_organization}
-                  </div>
-                )}
-
-                {/* Advisory / Warning Notice */}
-                <div style={{
-                  fontSize: '0.82rem',
-                  color: callerIntel.spoofing_suspected ? '#fca5a5' : 'var(--text-primary)',
-                  fontWeight: callerIntel.spoofing_suspected ? 700 : 400,
-                  marginTop: '6px',
-                  marginBottom: '10px',
-                  lineHeight: 1.4,
-                }}>
-                  {callerIntel.advisory}
-                </div>
-
-                {/* Official Helplines for Manual Senior Verification */}
-                {callerIntel.official_helplines && callerIntel.official_helplines.length > 0 && (
-                  <div style={{
-                    marginTop: '8px',
-                    padding: '8px 10px',
-                    backgroundColor: 'rgba(6, 182, 212, 0.08)',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid rgba(6, 182, 212, 0.2)',
-                  }}>
-                    <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', marginBottom: '4px' }}>
-                      Official Helpline for Manual Verification:
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {callerIntel.official_helplines.slice(0, 3).map((num, i) => (
-                        <a
-                          key={i}
-                          href={`tel:${num}`}
-                          style={{
-                            fontSize: '0.78rem',
-                            fontWeight: 700,
-                            color: '#ffffff',
-                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            textDecoration: 'none',
-                          }}
-                        >
-                          📞 {num}
-                        </a>
-                      ))}
-                      {callerIntel.official_url && (
-                        <a
-                          href={callerIntel.official_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            fontSize: '0.78rem',
-                            color: 'var(--accent-cyan)',
-                            padding: '3px 8px',
-                            textDecoration: 'underline',
-                          }}
-                        >
-                          Official Website ↗
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Metadata Disclaimer & Evidence Source */}
-                <div style={{
-                  fontSize: '0.7rem',
-                  color: 'var(--text-muted)',
-                  marginTop: '10px',
-                  lineHeight: 1.3,
-                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                  paddingTop: '6px',
-                }}>
-                  ℹ️ {callerIntel.metadata_disclaimer || 'Carrier and circle metadata reflect national ITU numbering allocations.'}
-                  <div style={{ marginTop: '2px', fontStyle: 'italic' }}>
-                    Source: {callerIntel.evidence_source || 'ITU E.164 + Google phonenumbers v9.0.41'}
-                  </div>
-                </div>
-              </div>
-              );
-            })()}
-          </div>
-
-          {/* Real-Time Risk Velocity Gauge Card */}
-          <div style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '22px',
-          }}>
-            <h3 style={{
-              fontSize: '1.05rem',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <span>Current Scam Risk Velocity</span>
-              <span style={{
-                fontSize: '0.76rem',
-                fontWeight: 700,
-                color: getScoreColor(currentScore),
-                padding: '2px 8px',
-                borderRadius: '4px',
-                backgroundColor: currentScore >= 66 ? 'var(--risk-high-bg)' : currentScore >= 26 ? 'var(--risk-suspicious-bg)' : 'var(--risk-low-bg)',
-                border: `1px solid ${getScoreColor(currentScore)}`,
-              }}>
-                {currentRiskLevel.replace('_', ' ')}
-              </span>
-            </h3>
-
-            {/* Score Display Ring / Progress */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: 'column',
-              padding: '14px 0',
-            }}>
-              <div style={{
-                fontSize: '3.4rem',
-                fontWeight: 900,
-                letterSpacing: '-0.04em',
-                color: getScoreColor(currentScore),
-                lineHeight: 1,
-              }}>
-                {currentScore.toFixed(0)}
-                <span style={{ fontSize: '1.2rem', color: 'var(--text-muted)', fontWeight: 600 }}>/100</span>
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
-                Index calibrated against ICFD-31k conversational fraud patterns
-              </div>
-            </div>
-
-            {/* Color spectrum scale */}
-            <div style={{ marginTop: '10px' }}>
-              <div style={{
-                height: '8px',
-                borderRadius: '4px',
-                background: 'linear-gradient(to right, #10b981 0%, #10b981 25%, #f59e0b 26%, #f59e0b 65%, #ef4444 66%, #ef4444 100%)',
-                position: 'relative',
-              }}>
-                <div style={{
-                  position: 'absolute',
-                  top: '-4px',
-                  left: `${Math.min(100, Math.max(0, currentScore))}%`,
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '50%',
-                  backgroundColor: '#ffffff',
-                  boxShadow: '0 0 6px rgba(0,0,0,0.6)',
-                  transform: 'translateX(-50%)',
-                  border: `3px solid ${getScoreColor(currentScore)}`,
-                  transition: 'left 0.25s ease',
-                }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                <span>0 Safe</span>
-                <span>25 Guarded</span>
-                <span>65 Suspicious</span>
-                <span>100 Critical</span>
-              </div>
-            </div>
-
-            {/* If Final Assessment Ready -> Button to View Dossier */}
-            {finalAssessment && (
-              <div style={{
-                marginTop: '18px',
-                paddingTop: '16px',
-                borderTop: '1px solid var(--border-subtle)',
-              }}>
-                <button
-                  onClick={() => onLoadFullAnalysis(finalAssessment)}
-                  style={{
-                    width: '100%',
-                    padding: '11px 16px',
-                    backgroundColor: 'var(--bg-surface-elevated)',
-                    border: '1.5px solid var(--accent-cyan)',
-                    borderRadius: 'var(--radius-md)',
-                    color: 'var(--accent-cyan)',
-                    fontWeight: 700,
-                    fontSize: '0.9rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  <span>Open Complete Evidence Dossier</span>
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* One-Click Real-Time Simulation Scenarios */}
-          <div style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '20px',
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '0.95rem',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              marginBottom: '12px',
-            }}>
-              <Sparkles size={17} color="var(--accent-cyan)" />
-              <span>Instant Live Call Demonstrations</span>
-            </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-              Simulates live conversational audio turn-by-turn with sub-second backend detection:
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {SIMULATED_CALLS.map((sim) => (
-                <button
-                  key={sim.id}
-                  onClick={() => runSimulation(sim.id)}
-                  disabled={isMonitoring}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    backgroundColor: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.86rem',
-                    fontWeight: 600,
-                    cursor: isMonitoring ? 'not-allowed' : 'pointer',
-                    opacity: isMonitoring ? 0.5 : 1,
-                    textAlign: 'left',
-                  }}
-                >
-                  <div>
-                    <div>{sim.title}</div>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{sim.lang} • {sim.turns.length} turns</div>
-                  </div>
-                  <Play size={14} color="var(--accent-cyan)" />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Live Turn-by-Turn Spoken Dialogue Feed */}
-        <div style={{
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-lg)',
-          display: 'flex',
-          flexDirection: 'column',
-          height: '680px',
-          overflow: 'hidden',
-        }}>
-          {/* Feed Header */}
-          <div style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid var(--border-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: 'var(--bg-surface-elevated)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Radio size={16} color="var(--accent-cyan)" />
-              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                Live Conversational Audio Feed
-              </span>
-              <span style={{
-                fontSize: '0.75rem',
-                padding: '2px 8px',
-                borderRadius: '12px',
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                color: 'var(--text-secondary)',
-              }}>
-                {turns.length} turns
-              </span>
-            </div>
-
-            {turns.length > 0 && (
-              <button
-                onClick={() => {
-                  setTurns([]);
-                  setCurrentScore(0);
-                  setActiveWarning(null);
-                  setFinalAssessment(null);
-                }}
-                disabled={isMonitoring || isSimulating}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '0.8rem',
-                  cursor: (isMonitoring || isSimulating) ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                <RotateCcw size={13} />
-                <span>Clear Feed</span>
-              </button>
-            )}
-          </div>
-
-          {/* Turns Container */}
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-          }}>
-            {turns.length === 0 ? (
-              <div style={{
-                height: '100%',
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', maxWidth: '860px' }}>
+            <div
+              style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--risk-high)',
+                color: '#FFFFFF',
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                textAlign: 'center',
-                color: 'var(--text-muted)',
-                padding: '40px 20px',
-              }}>
-                <Mic size={42} strokeWidth={1.5} style={{ marginBottom: '14px', opacity: 0.5 }} />
-                <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                  Awaiting Audio or Conversation Stream
-                </div>
-                <p style={{ fontSize: '0.85rem', maxWidth: '360px', marginTop: '6px' }}>
-                  Click "Start Live Microphone Protection", select a demo simulation on the left, or upload an audio recording to observe real-time fraud scoring.
-                </p>
+                flexShrink: 0,
+              }}
+            >
+              <AlertOctagon size={26} strokeWidth={2.4} />
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <h2
+                  style={{
+                    fontFamily: 'var(--font-heading)',
+                    fontSize: '1.4rem',
+                    fontWeight: 800,
+                    color: 'var(--risk-high)',
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  {activeOtpIntervention?.heading || 'DO NOT SHARE YOUR OTP'}
+                </h2>
+                <span className="badge-danger">
+                  Urgent Fraud Intervention
+                </span>
               </div>
-            ) : (
-              turns.map((turn) => {
-                const isCaller = turn.speaker === 'Caller';
-                const turnHighRisk = turn.level === 'HIGH_RISK';
-                const turnSuspicious = turn.level === 'SUSPICIOUS';
 
-                return (
-                  <div
-                    key={turn.id}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: isCaller ? 'flex-start' : 'flex-end',
-                    }}
-                  >
-                    {/* Speaker Header with Turn number and timestamp */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      fontSize: '0.76rem',
-                      color: 'var(--text-secondary)',
-                      marginBottom: '4px',
-                    }}>
-                      <span style={{
-                        fontWeight: 700,
-                        color: isCaller ? (turnHighRisk ? '#fca5a5' : 'var(--accent-cyan)') : 'var(--accent-teal)',
-                      }}>
-                        Turn #{turn.turnNumber}: {turn.speaker}
-                      </span>
-                      <span>•</span>
-                      <span>{turn.timestamp}</span>
-                      {turn.score !== undefined && (
-                        <span style={{
-                          padding: '1px 6px',
-                          borderRadius: '4px',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          backgroundColor: turnHighRisk ? 'var(--risk-high-bg)' : turnSuspicious ? 'var(--risk-suspicious-bg)' : 'var(--risk-low-bg)',
-                          color: turnHighRisk ? '#fca5a5' : turnSuspicious ? '#fcd34d' : '#6ee7b7',
-                        }}>
-                          Risk: {turn.score.toFixed(0)}
-                        </span>
-                      )}
-                    </div>
+              <p
+                style={{
+                  fontSize: '1.02rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  marginTop: '8px',
+                  lineHeight: 1.5,
+                }}
+              >
+                Never tell anyone your verification code. If someone is pressuring you, stop the conversation and verify their identity independently.
+              </p>
 
-                    {/* Speech Bubble */}
-                    <div style={{
-                      maxWidth: '85%',
-                      padding: '12px 16px',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: isCaller
-                        ? (turnHighRisk ? 'rgba(239, 68, 68, 0.16)' : 'var(--bg-surface-elevated)')
-                        : 'rgba(20, 184, 166, 0.12)',
-                      border: `1px solid ${
-                        isCaller
-                          ? (turnHighRisk ? 'var(--risk-high-border)' : 'var(--border-subtle)')
-                          : 'rgba(20, 184, 166, 0.3)'
-                      }`,
-                      color: 'var(--text-primary)',
-                      fontSize: '0.92rem',
-                      lineHeight: 1.5,
-                      boxShadow: turnHighRisk ? '0 0 14px rgba(239, 68, 68, 0.2)' : 'none',
-                    }}>
-                      {turn.text}
+              {activeOtpIntervention?.evidence_quotes && activeOtpIntervention.evidence_quotes.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '12px',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'rgba(200, 61, 67, 0.08)',
+                    border: '1px solid var(--risk-high-border)',
+                    fontSize: '0.86rem',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <span style={{ fontWeight: 700, color: 'var(--risk-high)' }}>Flagged Caller Demand: </span>
+                  <em>"{activeOtpIntervention.evidence_quotes[0]}"</em>
+                </div>
+              )}
 
-                      {/* Signals Tag Pills */}
-                      {turn.detectedSignals && turn.detectedSignals.length > 0 && (
-                        <div style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: '6px',
-                          marginTop: '8px',
-                          paddingTop: '6px',
-                          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                        }}>
-                          {turn.detectedSignals.map((sig, sidx) => (
-                            <span
-                              key={sidx}
-                              style={{
-                                fontSize: '0.68rem',
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                padding: '2px 6px',
-                                borderRadius: '3px',
-                                backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                                color: '#fca5a5',
-                                border: '1px solid rgba(239, 68, 68, 0.4)',
-                              }}
-                            >
-                              ⚠️ {sig}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            <div ref={dialogueEndRef} />
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '10px' }}>
+                ℹ️ The Android ElderShield Companion App is actively vibrating and announcing spoken guidance to the senior.
+              </p>
+            </div>
           </div>
 
-          {/* Footer Status Bar */}
-          <div style={{
-            padding: '12px 20px',
-            borderTop: '1px solid var(--border-subtle)',
-            backgroundColor: 'var(--bg-surface-elevated)',
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'center' }}>
+            <button
+              onClick={() => setIsWarningDismissed(true)}
+              className="btn-secondary"
+              style={{
+                borderColor: 'var(--risk-high-border)',
+                color: 'var(--risk-high)',
+                fontSize: '0.86rem',
+                padding: '8px 16px',
+              }}
+            >
+              <X size={15} />
+              <span>Acknowledge Warning</span>
+            </button>
+
+            <a
+              href="tel:1930"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--risk-high)',
+                color: '#FFFFFF',
+                fontSize: '0.86rem',
+                fontWeight: 700,
+              }}
+            >
+              <Phone size={14} />
+              <span>Speed-Dial 1930</span>
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Behavioral Warning Banner */}
+      {activeWarning && !activeOtpIntervention && (
+        <div
+          role="alert"
+          style={{
+            backgroundColor: 'var(--risk-warning-bg)',
+            border: '2px solid var(--risk-warning-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '16px 20px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            fontSize: '0.78rem',
-            color: 'var(--text-secondary)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor: connectionStatus === 'connected' ? '#10b981' : connectionStatus === 'connecting' ? '#f59e0b' : '#64748b',
-              }} />
-              <span>
-                Backend WebSocket: {connectionStatus === 'connected' ? `Connected (${getLiveCallWsUrl()})` : connectionStatus === 'connecting' ? 'Connecting...' : connectionStatus === 'disconnected' ? 'Disconnected / Reconnecting' : 'Ready'}
-              </span>
+            gap: '12px',
+            marginBottom: '20px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertOctagon size={22} color="var(--risk-warning)" />
+            <div>
+              <strong style={{ color: 'var(--risk-warning)' }}>{activeWarning.title}</strong>
+              <p style={{ fontSize: '0.86rem', color: 'var(--text-primary)', margin: 0 }}>
+                {activeWarning.message}
+              </p>
             </div>
-            <span>Language: {selectedLanguage}</span>
+          </div>
+          <button
+            onClick={() => setActiveWarning(null)}
+            className="btn-secondary"
+            style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* SECTION 6: MONITORING PIPELINE STATUS & CONTROL PANEL */}
+      <div className="es-card">
+        {/* Status Strip Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '16px',
+            paddingBottom: '20px',
+            borderBottom: '1px solid var(--divider-subtle)',
+          }}
+        >
+          {/* Active Status Explanation */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: isMonitoring
+                  ? currentRiskLevel === 'HIGH_RISK'
+                    ? 'var(--risk-high-bg)'
+                    : currentRiskLevel === 'SUSPICIOUS'
+                    ? 'var(--risk-warning-bg)'
+                    : 'var(--bg-soft-sage)'
+                  : 'var(--bg-secondary)',
+                color: isMonitoring
+                  ? currentRiskLevel === 'HIGH_RISK'
+                    ? 'var(--risk-high)'
+                    : currentRiskLevel === 'SUSPICIOUS'
+                    ? 'var(--risk-warning)'
+                    : 'var(--brand-primary)'
+                  : 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {isMonitoring ? <Radio size={22} /> : <PhoneOff size={22} />}
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span
+                  style={{
+                    fontSize: '1.08rem',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {isMonitoring
+                    ? isPaused
+                      ? 'Live Audio Monitoring: PAUSED'
+                      : 'Live Audio Monitoring: ACTIVE'
+                    : isSimulating
+                    ? 'Benchmark Simulation In Progress'
+                    : 'Audio Monitoring: INACTIVE'}
+                </span>
+
+                {isMonitoring && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      color: 'var(--brand-primary)',
+                      backgroundColor: 'var(--bg-soft-sage)',
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--brand-primary)',
+                      }}
+                    />
+                    WS ({connectionStatus})
+                  </span>
+                )}
+              </div>
+
+              <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {isMonitoring
+                  ? isPaused
+                    ? 'Audio stream temporarily paused. Click Resume to continue acoustic evaluation.'
+                    : 'Receiving live microphone or speakerphone audio. Behavioral engine evaluates frames every 250ms.'
+                  : 'Protection is not currently receiving audio. Click Start Live Monitoring or run a benchmark scenario to begin.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Primary Action Buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {!isMonitoring ? (
+              <button
+                onClick={startLiveMonitoring}
+                className="btn-primary"
+                style={{ padding: '10px 20px' }}
+              >
+                <Mic size={17} />
+                <span>Start Live Protection</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={togglePauseMonitoring}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.86rem', padding: '9px 15px' }}
+                >
+                  {isPaused ? <Play size={15} /> : <Pause size={15} />}
+                  <span>{isPaused ? 'Resume' : 'Pause'}</span>
+                </button>
+
+                <button
+                  onClick={stopLiveMonitoring}
+                  className="btn-secondary"
+                  style={{
+                    fontSize: '0.86rem',
+                    padding: '9px 15px',
+                    borderColor: 'var(--risk-high-border)',
+                    color: 'var(--risk-high)',
+                  }}
+                >
+                  <MicOff size={15} />
+                  <span>Stop Monitoring</span>
+                </button>
+              </>
+            )}
+
+            {onOpenCallerLookup && (
+              <button
+                onClick={onOpenCallerLookup}
+                className="btn-secondary"
+                title="Verify Caller Identity"
+                style={{ fontSize: '0.86rem', padding: '9px 14px' }}
+              >
+                <Phone size={15} />
+                <span>Verify Caller</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleResetSession}
+              className="btn-secondary"
+              title="Reset session and clear dialogue"
+              style={{ fontSize: '0.86rem', padding: '9px 12px' }}
+            >
+              <RotateCcw size={15} />
+            </button>
           </div>
         </div>
+
+        {/* Telemetry Row: Duration, Audio Meter, Language Selector, Score */}
+        <div
+          style={{
+            marginTop: '18px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '16px',
+            fontSize: '0.85rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap' }}>
+            {/* Session Duration */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
+              <Clock size={15} color="var(--text-muted)" />
+              <span>Session Duration: <strong>{formatTime(sessionDuration)}</strong></span>
+            </div>
+
+            {/* Mic Meter (Active Only) */}
+            {isMonitoring && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Mic Input:</span>
+                <div
+                  style={{
+                    width: '80px',
+                    height: '8px',
+                    borderRadius: '4px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${micAudioLevel}%`,
+                      backgroundColor: 'var(--brand-primary)',
+                      transition: 'width 0.1s ease',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Language Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <label htmlFor="lang-select" style={{ color: 'var(--text-secondary)' }}>Language:</label>
+              <select
+                id="lang-select"
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value)}
+                disabled={isMonitoring}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 'var(--radius-xs)',
+                  border: '1px solid var(--border-subtle)',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.82rem',
+                }}
+              >
+                <option value="en-IN">English (India)</option>
+                <option value="hi-IN">हिन्दी (Hindi)</option>
+                <option value="te-IN">తెలుగు (Telugu)</option>
+                <option value="en-US">English (US)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Current Evaluation Score Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Current Risk:</span>
+            <span
+              style={{
+                fontWeight: 700,
+                fontSize: '0.94rem',
+                color:
+                  currentRiskLevel === 'HIGH_RISK'
+                    ? 'var(--risk-high)'
+                    : currentRiskLevel === 'SUSPICIOUS'
+                    ? 'var(--risk-warning)'
+                    : 'var(--brand-primary)',
+              }}
+            >
+              {currentScore}/100 ({currentRiskLevel})
+            </span>
+          </div>
+        </div>
+
+        {/* Live Acoustic & WebSocket Stream Telemetry */}
+        {isMonitoring && (
+          <div
+            style={{
+              marginTop: '12px',
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '14px',
+              fontSize: '0.78rem',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <span>Mic Resampler: <strong>{inputSampleRate} Hz → 16 kHz PCM</strong></span>
+            <span>Audio Chunks Sent: <strong>{chunksSentCount}</strong> ({(totalBytesSent / 1024).toFixed(1)} KB)</span>
+            <span>Server ACKs: <strong>{chunksAckedCount}</strong></span>
+            <span>ASR Turns: <strong>{transcriptsCount}</strong></span>
+          </div>
+        )}
+
+        {/* Microphone Error Banner */}
+        {micError && (
+          <div
+            style={{
+              marginTop: '14px',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--warning-bg)',
+              border: '1px solid var(--warning-border)',
+              color: 'var(--warning-amber)',
+              fontSize: '0.84rem',
+              fontWeight: 500,
+            }}
+          >
+            {micError}
+          </div>
+        )}
+      </div>
+
+      {/* BENCHMARK TEST SCENARIOS (FOR CONTROLLED EXPERIMENTS) */}
+      <div className="es-card">
+        <div style={{ marginBottom: '14px' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            Benchmark Test Scenarios
+          </h3>
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            Run controlled, non-private test transcripts through the live WebSocket streaming pipeline without making real phone calls.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+          {SIMULATED_CALLS.map((sim) => (
+            <div
+              key={sim.id}
+              style={{
+                padding: '14px 16px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--bg-primary)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {sim.title}
+                  </span>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{sim.lang}</span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                  {sim.description}
+                </p>
+              </div>
+
+              <button
+                onClick={() => handleRunSimulation(sim)}
+                disabled={isSimulating || isMonitoring}
+                className="btn-secondary"
+                style={{
+                  marginTop: '12px',
+                  fontSize: '0.8rem',
+                  padding: '6px 12px',
+                  alignSelf: 'flex-start',
+                }}
+              >
+                <Play size={13} />
+                <span>Run Simulation ({sim.turns.length} turns)</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* AUDIO FILE UPLOAD PIPELINE */}
+      <div className="es-card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FileAudio size={18} color="var(--brand-primary)" />
+              <span>Analyze Call Audio Recording (WAV / MP3)</span>
+            </h3>
+            <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              Upload recorded speech to transcribe with server-side faster-whisper and execute multi-turn scam evaluation.
+            </p>
+          </div>
+
+          <label
+            className="btn-secondary"
+            style={{
+              cursor: isUploadingAudio ? 'not-allowed' : 'pointer',
+              fontSize: '0.84rem',
+              padding: '8px 14px',
+            }}
+          >
+            <input
+              type="file"
+              accept=".wav,.mp3,.m4a"
+              onChange={handleAudioUpload}
+              disabled={isUploadingAudio}
+              style={{ display: 'none' }}
+            />
+            <span>{isUploadingAudio ? 'Transcribing & Analyzing...' : 'Upload Recording File'}</span>
+          </label>
+        </div>
+
+        {audioUploadFeedback && (
+          <div
+            style={{
+              marginTop: '12px',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '0.82rem',
+              color: 'var(--text-primary)',
+            }}
+          >
+            {audioUploadFeedback}
+          </div>
+        )}
+      </div>
+
+      {/* LIVE DIALOGUE STREAM (READABLE TRANSCRIPT FEED) */}
+      <div className="es-card">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '16px',
+            paddingBottom: '12px',
+            borderBottom: '1px solid var(--divider-subtle)',
+          }}
+        >
+          <div>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Dialogue Transcript & Turn Stream
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              Transcribed conversational speech frames with private verification digits masked.
+            </p>
+          </div>
+
+          {finalAssessment && (
+            <button
+              onClick={() => onLoadFullAnalysis(finalAssessment)}
+              className="btn-primary"
+              style={{ fontSize: '0.84rem', padding: '6px 14px' }}
+            >
+              <span>View Full Evidence Ledger</span>
+              <ArrowRight size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Turn Cards Container */}
+        {turns.length > 0 || interimSpeech ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+            {turns.map((turn) => {
+              const isCaller = turn.speaker === 'Caller';
+              return (
+                <div
+                  key={turn.id}
+                  style={{
+                    padding: '12px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: isCaller ? 'var(--bg-primary)' : 'var(--bg-soft-sage)',
+                    border: `1px solid ${isCaller ? 'var(--border-subtle)' : 'var(--brand-subtle)'}`,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: 'var(--radius-full)',
+                          backgroundColor: isCaller ? 'var(--bg-secondary)' : 'var(--brand-primary)',
+                          color: isCaller ? 'var(--text-primary)' : '#FFFFFF',
+                        }}
+                      >
+                        {turn.speaker} • Turn {turn.turnNumber}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{turn.timestamp}</span>
+                    </div>
+                  </div>
+
+                  <p style={{ fontSize: '0.92rem', color: 'var(--text-primary)', lineHeight: 1.5, marginTop: '2px' }}>
+                    {maskSensitiveDigits(turn.text)}
+                  </p>
+                </div>
+              );
+            })}
+
+            {interimSpeech && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'var(--bg-soft-sage)',
+                  border: '1px dashed var(--brand-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  color: 'var(--brand-primary)',
+                  fontSize: '0.92rem',
+                }}
+              >
+                <Radio size={16} />
+                <span>
+                  <strong>Listening:</strong> <em>"{interimSpeech}..."</em>
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              padding: '36px 20px',
+              textAlign: 'center',
+              backgroundColor: 'var(--bg-primary)',
+              border: '1px dashed var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <Activity size={26} color="var(--text-muted)" style={{ margin: '0 auto 8px' }} />
+            <h4 style={{ fontSize: '0.96rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              No Conversational Speech Recorded Yet
+            </h4>
+            <p style={{ fontSize: '0.84rem', maxWidth: '420px', margin: '4px auto 0' }}>
+              When live monitoring starts or an audio simulation runs, recognized dialogue turns will stream here in real time.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

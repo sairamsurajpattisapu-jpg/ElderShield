@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: eldershield-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: PORT
+        value: "8000"
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: WHISPER_MODEL_SIZE
+        value: tiny
+      - key: WHISPER_DEVICE
+        value: cpu
+      - key: WHISPER_COMPUTE_TYPE
+        value: int8
+      - key: MAX_AUDIO_UPLOAD_MB
+        value: "25"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MASK_LOG_PII
+        value: "true"
+      - key: DATA_RETENTION_POLICY
+        value: EPHEMERAL_ZERO_DISK_RETENTION

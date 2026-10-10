@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import {
   ShieldAlert,
-  PhoneCall,
   Printer,
   Copy,
   Check,
-  ExternalLink,
 } from 'lucide-react';
 import type { RiskAssessment } from '../types';
 
@@ -18,15 +16,12 @@ export const ProtectionRecommendations: React.FC<ProtectionRecommendationsProps>
 
   const handleCopyReport = () => {
     const reportText = `=== ELDERSHIELD SCAM INCIDENT REPORT ===
-Scan ID: ${result.id}
+Evaluation ID: ${result.id}
 Timestamp: ${result.timestamp}
 Classification: ${result.risk_level} (Score: ${result.risk_score}/100)
 Decision: ${result.decision}
 Language Detected: ${result.language_detected}
 Method: ${result.analysis_method}
-
-SCORE SEMANTICS:
-${result.score_semantics}
 
 RECOMMENDED ACTION FOR SENIOR:
 ${result.recommended_action}
@@ -38,12 +33,12 @@ FLAGGED EVIDENCE ITEMS:
 ${result.evidence.map((f) => `- Turn ${f.turn_number} (${f.signal_category}): "${f.exact_quote}" -> ${f.explanation}`).join('\n')}
 
 NATIONAL CYBERCRIME HELPLINE: Dial 1930
-Reporting Portal: https://cybercrime.gov.in
+Portal: https://cybercrime.gov.in
 ========================================`;
 
     navigator.clipboard.writeText(reportText).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 3000);
+      setTimeout(() => setCopied(false), 2500);
     });
   };
 
@@ -51,36 +46,38 @@ Reporting Portal: https://cybercrime.gov.in
     window.print();
   };
 
+  const isHighOrSuspicious = result.risk_level === 'HIGH_RISK' || result.risk_level === 'SUSPICIOUS';
+
   return (
-    <div style={{
-      backgroundColor: 'var(--bg-surface)',
-      border: '1px solid var(--border-subtle)',
-      borderRadius: 'var(--radius-lg)',
-      padding: '24px',
-      marginBottom: '28px',
-    }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '14px',
-        marginBottom: '18px',
-      }}>
+    <div className="es-card" style={{ marginBottom: '24px' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '14px',
+          marginBottom: '18px',
+          paddingBottom: '14px',
+          borderBottom: '1px solid var(--divider-subtle)',
+        }}
+      >
         <div>
-          <h3 style={{
-            fontSize: '1.2rem',
-            fontWeight: 700,
-            color: 'var(--text-primary)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}>
-            <ShieldAlert size={20} color="var(--accent-cyan)" />
-            <span>Recommended Actions & Protection Plan</span>
+          <h3
+            style={{
+              fontSize: '1.15rem',
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <ShieldAlert size={18} color="var(--brand-primary)" />
+            <span>Senior Protection Protocol & Incident Actions</span>
           </h3>
-          <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Actionable instructions designed to protect elderly citizens from unauthorized debit and emotional manipulation.
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            Actionable safety steps designed to protect elderly citizens from coercion and financial extraction.
           </p>
         </div>
 
@@ -88,37 +85,17 @@ Reporting Portal: https://cybercrime.gov.in
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             onClick={handleCopyReport}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-primary)',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-            }}
+            className="btn-secondary"
+            style={{ fontSize: '0.82rem', padding: '7px 12px' }}
           >
-            {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
-            <span>{copied ? 'Copied to Clipboard' : 'Copy Incident Report'}</span>
+            {copied ? <Check size={14} color="var(--brand-primary)" /> : <Copy size={14} />}
+            <span>{copied ? 'Copied' : 'Copy Audit Report'}</span>
           </button>
 
           <button
             onClick={handlePrint}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-primary)',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-            }}
+            className="btn-secondary"
+            style={{ fontSize: '0.82rem', padding: '7px 12px' }}
           >
             <Printer size={14} />
             <span>Print Report</span>
@@ -126,120 +103,146 @@ Reporting Portal: https://cybercrime.gov.in
         </div>
       </div>
 
-      {/* Main Recommended Action Callout */}
-      <div style={{
-        backgroundColor: 'var(--bg-primary)',
-        border: '1.5px solid var(--border-prominent)',
-        borderRadius: 'var(--radius-md)',
-        padding: '18px 22px',
-        marginBottom: '18px',
-      }}>
-        <div style={{ fontSize: '0.78rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', fontWeight: 800, marginBottom: '6px' }}>
-          Primary Protection Directive
+      {/* Primary Recommended Action Card */}
+      <div
+        style={{
+          padding: '16px 18px',
+          borderRadius: 'var(--radius-sm)',
+          backgroundColor: isHighOrSuspicious ? 'var(--risk-high-bg)' : 'var(--bg-soft-sage)',
+          border: `1px solid ${isHighOrSuspicious ? 'var(--risk-high-border)' : 'var(--brand-subtle)'}`,
+          marginBottom: '20px',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '0.76rem',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            color: isHighOrSuspicious ? 'var(--risk-high)' : 'var(--brand-primary)',
+            marginBottom: '4px',
+          }}
+        >
+          Senior Action Recommendation
         </div>
-        <p style={{ fontSize: '1.02rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+        <p
+          style={{
+            fontSize: '0.94rem',
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            lineHeight: 1.5,
+          }}
+        >
           {result.recommended_action}
         </p>
       </div>
 
-      {/* Specific Deterministic Reasons */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{ fontSize: '0.84rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px' }}>
-          Rationale Summary ({result.reasons.length} Points)
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {result.reasons.map((rec, index) => (
-            <div
-              key={index}
+      {/* 3 Step Protocol Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+        {/* Step 1 */}
+        <div
+          style={{
+            padding: '16px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--bg-primary)',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span
               style={{
-                backgroundColor: 'var(--bg-primary)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-              }}
-            >
-              <div style={{
                 width: '24px',
                 height: '24px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                color: 'var(--accent-cyan)',
+                backgroundColor: 'var(--brand-primary)',
+                color: '#FFFFFF',
+                fontSize: '0.78rem',
+                fontWeight: 700,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontWeight: 800,
-                fontSize: '0.8rem',
-                flexShrink: 0,
-              }}>
-                {index + 1}
-              </div>
-              <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
-                {rec}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Emergency Cyber helpline and Family escalation card */}
-      <div style={{
-        padding: '18px 22px',
-        backgroundColor: 'rgba(239, 68, 68, 0.08)',
-        border: '1.5px solid var(--risk-high-border)',
-        borderRadius: 'var(--radius-md)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '16px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '10px',
-            backgroundColor: '#ef4444',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            flexShrink: 0,
-          }}>
-            <PhoneCall size={22} />
+              }}
+            >
+              1
+            </span>
+            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Terminate Call
+            </span>
           </div>
-          <div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#fca5a5' }}>
-              National Cybercrime Reporting Helpline: 1930
-            </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Toll-free emergency financial fraud helpline. Call immediately within the golden hour to freeze fraudulent bank transfers.
-            </p>
-          </div>
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            Do not engage in arguments or attempt to reason with callers who threaten arrest or demand OTPs. Hang up immediately.
+          </p>
         </div>
 
-        <a
-          href="https://cybercrime.gov.in"
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* Step 2 */}
+        <div
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '10px 18px',
-            backgroundColor: '#dc2626',
-            color: '#ffffff',
-            textDecoration: 'none',
+            padding: '16px',
             borderRadius: 'var(--radius-sm)',
-            fontWeight: 700,
-            fontSize: '0.88rem',
+            backgroundColor: 'var(--bg-primary)',
+            border: '1px solid var(--border-subtle)',
           }}
         >
-          <span>cybercrime.gov.in</span>
-          <ExternalLink size={14} />
-        </a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--brand-primary)',
+                color: '#FFFFFF',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              2
+            </span>
+            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Consult Family or Bank
+            </span>
+          </div>
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            Inform a trusted family member, neighbor, or visit your local branch in person. Never install remote screen-sharing apps like AnyDesk.
+          </p>
+        </div>
+
+        {/* Step 3 */}
+        <div
+          style={{
+            padding: '16px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--bg-primary)',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--brand-primary)',
+                color: '#FFFFFF',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              3
+            </span>
+            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Call 1930 Helpline
+            </span>
+          </div>
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            If any financial transaction was made, dial the National Cybercrime Helpline <strong>1930</strong> within 2 hours to freeze fraudulent fund transfers.
+          </p>
+        </div>
       </div>
     </div>
   );

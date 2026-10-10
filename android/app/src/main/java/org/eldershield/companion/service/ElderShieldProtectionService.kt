@@ -86,6 +86,7 @@ class ElderShieldProtectionService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
+    private var audioCaptureJob: Job? = null
     private var webSocket: WebSocket? = null
     private var retryAttempt = 0
     private var reconnectJob: Job? = null
@@ -160,6 +161,8 @@ class ElderShieldProtectionService : Service() {
     private fun stopProtection() {
         isRunning = false
         isRecording = false
+        audioCaptureJob?.cancel()
+        audioCaptureJob = null
         reconnectJob?.cancel()
         reconnectJob = null
         retryAttempt = 0
@@ -213,6 +216,8 @@ class ElderShieldProtectionService : Service() {
 
                 // Temporary pause audio capture while disconnected
                 isRecording = false
+                audioCaptureJob?.cancel()
+                audioCaptureJob = null
                 try {
                     audioRecord?.stop()
                     audioRecord?.release()
@@ -260,11 +265,13 @@ class ElderShieldProtectionService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun startAudioCapture() {
-        if (isRecording) return
+        if (isRecording || audioCaptureJob?.isActive == true) return
+        isRecording = true
 
-        serviceScope.launch {
+        audioCaptureJob = serviceScope.launch {
             val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-            val bufferSize = maxOf(minBufferSize, 3200) // ~100ms frames of 16kHz 16-bit mono PCM
+            val internalBufferSize = maxOf(minBufferSize * 4, 16000)
+            val chunkSize = 3200 // ~100ms frames of 16kHz 16-bit mono PCM
 
             try {
                 audioRecord = AudioRecord(
@@ -272,7 +279,7 @@ class ElderShieldProtectionService : Service() {
                     SAMPLE_RATE,
                     CHANNEL_CONFIG,
                     AUDIO_FORMAT,
-                    bufferSize
+                    internalBufferSize
                 )
 
                 if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
@@ -283,9 +290,8 @@ class ElderShieldProtectionService : Service() {
                 }
 
                 audioRecord?.startRecording()
-                isRecording = true
 
-                val audioBuffer = ByteArray(bufferSize)
+                val audioBuffer = ByteArray(chunkSize)
                 var sequenceId = 0
 
                 while (isRecording && isRunning && currentState == ProtectionState.LIVE_PROTECTED) {

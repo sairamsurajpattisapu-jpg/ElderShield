@@ -4,7 +4,7 @@
     <string name="shield_inactive">SHIELD OFF</string>
     <string name="status_protected">You are protected against phone scams.</string>
     <string name="status_monitoring">LISTENING FOR SCAM SIGNS…</string>
-    <string name="status_paused">Tap the green button below to start protection.</string>
+    <string name="status_paused">Tap Start Protection below to begin real-time monitoring.</string>
     <string name="status_scam_alert">DANGER: SCAM DETECTED! HANG UP NOW!</string>
     <string name="btn_start_protection">START PROTECTION</string>
     <string name="btn_stop_protection">STOP PROTECTION</string>

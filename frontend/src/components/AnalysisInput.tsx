@@ -1,5 +1,6 @@
-import React from 'react';
-import { Send, Trash2, Languages, Sparkles, MessageSquare } from 'lucide-react';
+import React, { useState } from 'react';
+import { Send, Trash2, Languages, MessageSquare, Info, FileAudio, RefreshCw, AlertCircle } from 'lucide-react';
+import { analyzeAudioFile } from '../api';
 
 interface AnalysisInputProps {
   transcript: string;
@@ -20,6 +21,9 @@ export const AnalysisInput: React.FC<AnalysisInputProps> = ({
   demoScenarioTitle,
   onResetToCustom,
 }) => {
+  const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
+  const [audioFeedback, setAudioFeedback] = useState<string | null>(null);
+
   const insertPrefix = (prefix: string) => {
     const trimmed = transcript.trim();
     if (!trimmed) {
@@ -29,224 +33,255 @@ export const AnalysisInput: React.FC<AnalysisInputProps> = ({
     }
   };
 
+  const handleAudioFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsTranscribing(true);
+    setAudioFeedback(null);
+    try {
+      const res = await analyzeAudioFile(file);
+      if (res.transcript && res.transcript.trim()) {
+        setTranscript(res.transcript.trim());
+        setAudioFeedback(
+          `Transcribed "${file.name}" (${res.audio_metrics.duration_seconds}s) via faster-whisper in ${res.audio_metrics.transcription_latency_ms}ms.`
+        );
+      } else {
+        setAudioFeedback('Audio file was processed but no speech was detected.');
+      }
+    } catch (err: unknown) {
+      setAudioFeedback(`Audio recognition error: ${err instanceof Error ? err.message : 'Transcription failed'}`);
+    } finally {
+      setIsTranscribing(false);
+      e.target.value = '';
+    }
+  };
+
+  const lineCount = transcript ? transcript.split('\n').filter((l) => l.trim().length > 0).length : 0;
+
   return (
-    <div style={{
-      backgroundColor: 'var(--bg-surface)',
-      border: '1px solid var(--border-subtle)',
-      borderRadius: 'var(--radius-lg)',
-      padding: '24px',
-      marginBottom: '28px',
-    }}>
+    <div className="es-card" style={{ marginBottom: '24px' }}>
       {/* Header of input area */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '12px',
-        marginBottom: '14px',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          marginBottom: '14px',
+        }}
+      >
         <div>
-          <h3 style={{
-            fontSize: '1.15rem',
-            fontWeight: 700,
-            color: 'var(--text-primary)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}>
-            <MessageSquare size={19} color="var(--accent-cyan)" />
-            <span>Conversation Transcript Input</span>
+          <h3
+            style={{
+              fontSize: '1.15rem',
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <MessageSquare size={18} color="var(--brand-primary)" />
+            <span>Conversation Dialogue & Audio Input</span>
           </h3>
-          <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Paste any phone call transcript below. Supports English, Hindi (हिन्दी), Telugu (తెలుగు), and mixed dialects.
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            Paste dialogue text or upload a recorded call (.wav, .mp3) for server-side faster-whisper transcription.
           </p>
         </div>
 
         {/* Language badges */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <span style={{
-            fontSize: '0.72rem',
-            color: 'var(--text-muted)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            marginRight: '4px',
-          }}>
-            <Languages size={14} /> Engine Support:
+          <span
+            style={{
+              fontSize: '0.74rem',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              marginRight: '2px',
+            }}
+          >
+            <Languages size={13} /> Languages:
           </span>
-          <span style={{ fontSize: '0.72rem', padding: '2px 7px', borderRadius: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)' }}>English</span>
-          <span style={{ fontSize: '0.72rem', padding: '2px 7px', borderRadius: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)' }}>हिन्दी (Hindi)</span>
-          <span style={{ fontSize: '0.72rem', padding: '2px 7px', borderRadius: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)' }}>తెలుగు (Telugu)</span>
-          <span style={{ fontSize: '0.72rem', padding: '2px 7px', borderRadius: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)' }}>Hinglish / Teluglish</span>
+          <span style={{ fontSize: '0.72rem', padding: '2px 7px', borderRadius: 'var(--radius-xs)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>English</span>
+          <span style={{ fontSize: '0.72rem', padding: '2px 7px', borderRadius: 'var(--radius-xs)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>हिन्दी (Hindi)</span>
+          <span style={{ fontSize: '0.72rem', padding: '2px 7px', borderRadius: 'var(--radius-xs)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>తెలుగు (Telugu)</span>
         </div>
       </div>
 
       {/* Demo loaded indicator */}
       {isDemoLoaded && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 14px',
-          backgroundColor: 'rgba(6, 182, 212, 0.1)',
-          border: '1px solid rgba(6, 182, 212, 0.3)',
-          borderRadius: 'var(--radius-md)',
-          marginBottom: '14px',
-          fontSize: '0.86rem',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-cyan)' }}>
-            <Sparkles size={16} />
-            <span>Currently loaded: <strong>{demoScenarioTitle}</strong> (Deterministic Benchmark)</span>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 14px',
+            backgroundColor: 'var(--bg-soft-sage)',
+            border: '1px solid var(--brand-subtle)',
+            borderRadius: 'var(--radius-sm)',
+            marginBottom: '14px',
+            fontSize: '0.84rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Info size={16} color="var(--brand-primary)" />
+            <span>
+              Loaded Benchmark Scenario: <strong>{demoScenarioTitle || 'Selected Scenario'}</strong>
+            </span>
           </div>
           <button
             onClick={onResetToCustom}
             style={{
-              background: 'transparent',
+              background: 'none',
               border: 'none',
-              color: 'var(--text-secondary)',
-              fontSize: '0.82rem',
-              textDecoration: 'underline',
+              color: 'var(--brand-primary)',
               cursor: 'pointer',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              textDecoration: 'underline',
             }}
           >
-            Clear & Write Custom
+            Clear to Custom
           </button>
         </div>
       )}
 
-      {/* Transcript Textarea */}
-      <div style={{ position: 'relative' }}>
-        <textarea
-          value={transcript}
-          onChange={(e) => setTranscript(e.target.value)}
-          placeholder={`Enter conversation transcript lines here, for example:\n\nCaller: Hello, I am calling from State Bank of India.\nSenior: Yes, what is this regarding?\nCaller: Your account needs urgent KYC verification, please share the 6-digit OTP right now.`}
-          rows={8}
+      {/* Audio upload feedback banner */}
+      {audioFeedback && (
+        <div
           style={{
-            width: '100%',
-            backgroundColor: 'var(--bg-primary)',
-            border: '1.5px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-md)',
-            padding: '16px',
-            color: 'var(--text-primary)',
-            lineHeight: 1.6,
-            resize: 'vertical',
-            outline: 'none',
-            fontSize: 'inherit',
-          }}
-          onFocus={(e) => e.target.style.borderColor = 'var(--accent-cyan)'}
-          onBlur={(e) => e.target.style.borderColor = 'var(--border-subtle)'}
-        />
-      </div>
-
-      {/* Quick turn helpers & action buttons */}
-      <div style={{
-        marginTop: '14px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '12px',
-      }}>
-        {/* Quick insertion chips */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Quick Format:</span>
-          <button
-            type="button"
-            onClick={() => insertPrefix('Caller')}
-            style={{
-              padding: '4px 10px',
-              borderRadius: 'var(--radius-sm)',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-secondary)',
-              fontSize: '0.82rem',
-            }}
-          >
-            + Caller:
-          </button>
-          <button
-            type="button"
-            onClick={() => insertPrefix('Senior')}
-            style={{
-              padding: '4px 10px',
-              borderRadius: 'var(--radius-sm)',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-secondary)',
-              fontSize: '0.82rem',
-            }}
-          >
-            + Senior:
-          </button>
-          {transcript && (
-            <button
-              type="button"
-              onClick={() => setTranscript('')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 10px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '0.82rem',
-              }}
-            >
-              <Trash2 size={13} />
-              <span>Clear</span>
-            </button>
-          )}
-        </div>
-
-        {/* Submit button */}
-        <button
-          onClick={onAnalyze}
-          disabled={isLoading || !transcript.trim()}
-          style={{
-            backgroundColor: 'var(--accent-cyan)',
-            color: '#080c16',
-            border: 'none',
-            borderRadius: 'var(--radius-md)',
-            padding: '12px 26px',
-            fontWeight: 700,
-            fontSize: '0.98rem',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            cursor: isLoading || !transcript.trim() ? 'not-allowed' : 'pointer',
-            opacity: isLoading || !transcript.trim() ? 0.6 : 1,
-            boxShadow: '0 4px 14px rgba(6, 182, 212, 0.25)',
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: audioFeedback.includes('error') ? 'var(--risk-high-bg)' : 'var(--bg-soft-sage)',
+            border: `1px solid ${audioFeedback.includes('error') ? 'var(--risk-high-border)' : 'var(--brand-subtle)'}`,
+            color: audioFeedback.includes('error') ? 'var(--risk-high)' : 'var(--brand-primary)',
+            fontSize: '0.82rem',
+            marginBottom: '14px',
           }}
         >
-          {isLoading ? (
-            <>
-              <div style={{
-                width: '16px',
-                height: '16px',
-                border: '2px solid #080c16',
-                borderTopColor: 'transparent',
-                borderRadius: '50%',
-                animation: 'spin 0.8s linear infinite',
-              }} />
-              <span>Analyzing Conversation...</span>
-            </>
-          ) : (
-            <>
-              <Send size={16} />
-              <span>Analyze Conversation</span>
-            </>
-          )}
+          {audioFeedback.includes('error') ? <AlertCircle size={15} /> : <FileAudio size={15} />}
+          <span>{audioFeedback}</span>
+        </div>
+      )}
+
+      {/* Quick Speaker Buttons */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Insert Speaker Prefix:</span>
+        <button
+          type="button"
+          onClick={() => insertPrefix('Caller')}
+          className="btn-secondary"
+          style={{ fontSize: '0.76rem', padding: '3px 8px' }}
+        >
+          + Caller:
+        </button>
+        <button
+          type="button"
+          onClick={() => insertPrefix('Senior')}
+          className="btn-secondary"
+          style={{ fontSize: '0.76rem', padding: '3px 8px' }}
+        >
+          + Senior:
         </button>
       </div>
 
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+      {/* Textarea */}
+      <textarea
+        value={transcript}
+        onChange={(e) => setTranscript(e.target.value)}
+        placeholder="Paste conversation transcript here, e.g.:&#10;Caller: This is Officer Sharma from Central Bureau of Investigation.&#10;Senior: Hello, what is this regarding?&#10;Caller: A parcel in your name was intercepted. You are under digital arrest. Transfer 85,000 rupees immediately."
+        rows={7}
+        style={{
+          width: '100%',
+          padding: '12px 14px',
+          borderRadius: 'var(--radius-sm)',
+          border: '1px solid var(--border-subtle)',
+          backgroundColor: 'var(--bg-primary)',
+          color: 'var(--text-primary)',
+          fontSize: '0.92rem',
+          fontFamily: 'monospace',
+          lineHeight: 1.5,
+          resize: 'vertical',
+        }}
+      />
+
+      {/* Footer Actions */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          marginTop: '12px',
+        }}
+      >
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          {lineCount} turn line(s) • {transcript.length} characters
+        </span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Audio Upload File Selector */}
+          <label
+            className="btn-secondary"
+            style={{
+              fontSize: '0.82rem',
+              padding: '7px 12px',
+              cursor: isTranscribing ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+            title="Upload .wav, .mp3 or .m4a call audio for automated faster-whisper transcription"
+          >
+            <input
+              type="file"
+              accept=".wav,.mp3,.m4a"
+              onChange={handleAudioFile}
+              disabled={isTranscribing}
+              style={{ display: 'none' }}
+            />
+            {isTranscribing ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <FileAudio size={14} color="var(--brand-primary)" />
+            )}
+            <span>{isTranscribing ? 'Transcribing...' : 'Upload Call Audio'}</span>
+          </label>
+
+          {transcript && (
+            <button
+              type="button"
+              onClick={() => {
+                setTranscript('');
+                setAudioFeedback(null);
+              }}
+              className="btn-secondary"
+              style={{ fontSize: '0.82rem', padding: '7px 12px' }}
+            >
+              <Trash2 size={14} />
+              <span>Clear</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onAnalyze}
+            disabled={isLoading || !transcript.trim()}
+            className="btn-primary"
+            style={{ fontSize: '0.88rem', padding: '8px 18px' }}
+          >
+            <Send size={15} />
+            <span>{isLoading ? 'Evaluating Conversation...' : 'Evaluate Transcript'}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 
 PATTERNS_IMPERSONATION = {
     "BANK_AUTHORITY": [
-        r"\b(?:calling\s+from|this\s+is\s+[\w\s]+from)\s+(?:sbi|state\s+bank(?:\s+of\s+india)?|hdfc|icici|axis|pnb|rbi|reserve\s+bank|central\s+bank|canara)\b",
+        r"\b(?:(?:calling\s+from|this\s+is\s+[\w\s]+from|official\s+from|speaking\s+from)\s+)?(?:sbi|state\s+bank(?:\s+of\s+india)?|hdfc|icici|axis|pnb|rbi|reserve\s+bank|central\s+bank|canara)(?:\s+(?:bank|branch|manager|officer|official|customer\s+care|verification|department))?\b",
         r"\b(?:i\s+am|this\s+is)\s+(?:the\s+)?[\w\s]*(?:manager|officer|executive|representative|employee)\s+from\s+[\w\s]*(?:sbi|state\s+bank(?:\s+of\s+india)?|hdfc|icici|axis|pnb|rbi|bank)\b",
         r"\b(?:i\s+am|speaking\s+from)\s+(?:the\s+)?(?:bank|head\s+office|fraud\s+prevention\s+department|security\s+division)\b",
         r"\b(?:bank\s+manager|branch\s+manager|bank\s+officer|rbi\s+officer)\s+(?:calling|here)\b",
@@ -64,7 +64,7 @@ PATTERNS_SECRECY_ISOLATION = [
 
 # Direct solicitations of OTP, PIN, password, or verification codes
 PATTERNS_CREDENTIAL_REQUEST = [
-    r"\b(?:share|tell|give|read\s+out|read|dictate|forward|send|enter|verify|provide|state|confirm|repeat|spell\s+out)\s+(?:me\s+|us\s+)?(?:the|your|that)?\s*(?:\d+[\s-]*digit\s+)?(?:atm\s*(?:card\s*)?pin|card\s*pin|upi\s*pin|pin|otp|otpp|one\s*time\s*password|netbanking\s*(?:login\s*)?password|login\s*password|password|code|six\s*digit\s*code|sms\s*code|cvv|confirmation\s*code|verification\s*code|received\s+sms)(?:\s+to\s+(?:me|us))?\b",
+    r"\b(?:share|tell|give|read\s+out|read|dictate|forward|send|enter|verify|provide|state|confirm|repeat|spell\s+out)\s+(?:me\s+|us\s+)?(?:the|your|that)?\s*(?:[\w\s.,-]{0,35})\s*(?:atm\s*(?:card\s*)?pin|card\s*pin|upi\s*pin|\bpin\b|\botp\b|otpp|one[\s-]*time[\s-]*password|netbanking\s*(?:login\s*)?password|login\s*password|password|code|six\s*digit\s*code|sms\s*code|cvv|confirmation\s*code|verification\s*code|received\s+sms)\b",
     r"\b(?:share\s+the\s+6[\s-]*digit|read\s+out\s+the\s+9[\s-]*digit|share\s+the\s+code|what\s+is\s+the\s+code|dictate\s+the\s+code)\b",
     r"\b(?:enter\s+your\s+upi\s*pin|provide\s+your\s+(?:atm\s*(?:card\s*)?pin|pin)|what\s+is\s+the\s+otp|tell\s+me\s+the\s+otp|forward\s+(?:the\s+)?(?:otp|sms|verification\s*code))\b",
     r"\b(?:(?:16\s*digit\s*)?card\s*number|cvv\s+on\s+the\s+back|\bcvv\b)\b",

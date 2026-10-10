@@ -10,238 +10,385 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:paddingHorizontal="20dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="32dp">
 
-        <!-- Top Header Bar -->
+        <!-- 1. Top Header Bar -->
         <RelativeLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="20dp">
 
-            <TextView
-                android:id="@+id/tvAppTitle"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/app_name"
-                android:textSize="26sp"
-                android:textStyle="bold"
-                android:textColor="@color/text_primary" />
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/tvAppSubtitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_below="@id/tvAppTitle"
-                android:text="Senior Fraud Shield"
-                android:textSize="14sp"
-                android:textColor="@color/text_secondary" />
+                <TextView
+                    android:id="@+id/tvAppTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/manrope"
+                    android:text="@string/app_name"
+                    android:textColor="@color/text_primary"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvAppSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:fontFamily="@font/inter"
+                    android:text="Real-Time Scam Intervention Companion"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
 
             <ImageButton
                 android:id="@+id/btnSettings"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:layout_alignParentEnd="true"
                 android:layout_centerVertical="true"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/bg_pill_neutral"
                 android:contentDescription="Settings"
-                android:src="@android:drawable/ic_menu_manage"
+                android:padding="10dp"
+                android:src="@drawable/ic_settings"
                 app:tint="@color/text_primary" />
         </RelativeLayout>
 
-        <!-- Big Protection Status Card -->
+        <!-- 2. Protection Status Hero Card -->
         <LinearLayout
             android:id="@+id/cardStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/bg_status_box"
-            android:padding="24dp"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/bg_elder_card"
             android:gravity="center"
-            android:layout_marginBottom="20dp">
+            android:orientation="vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="26dp">
 
-            <ImageView
-                android:id="@+id/ivShieldIcon"
-                android:layout_width="64dp"
-                android:layout_height="64dp"
-                android:src="@drawable/ic_shield"
-                android:contentDescription="Shield"
-                android:layout_marginBottom="12dp" />
+            <!-- Shield Icon Container -->
+            <FrameLayout
+                android:layout_width="68dp"
+                android:layout_height="68dp"
+                android:layout_marginBottom="14dp"
+                android:background="@drawable/bg_pill_neutral"
+                android:padding="14dp">
+
+                <ImageView
+                    android:id="@+id/ivShieldIcon"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="Protection Shield Icon"
+                    android:src="@drawable/ic_shield"
+                    app:tint="@color/primary" />
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/tvStatusTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/shield_active"
-                android:textSize="24sp"
-                android:textStyle="bold"
-                android:textColor="@color/status_green_text"
+                android:layout_marginBottom="6dp"
+                android:fontFamily="@font/manrope"
                 android:gravity="center"
-                android:layout_marginBottom="8dp" />
+                android:text="@string/shield_inactive"
+                android:textColor="@color/text_primary"
+                android:textSize="22sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvStatusSubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/status_protected"
-                android:textSize="16sp"
-                android:textColor="@color/status_green_text"
-                android:gravity="center" />
+                android:fontFamily="@font/inter"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:paddingHorizontal="12dp"
+                android:text="@string/status_paused"
+                android:textColor="@color/text_secondary"
+                android:textSize="14.5sp" />
+
+            <!-- Subsystem Telemetry Status Badges -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <!-- Mic Badge -->
+                <LinearLayout
+                    android:id="@+id/badgeMicStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/bg_pill_neutral"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="5dp">
+
+                    <ImageView
+                        android:layout_width="13dp"
+                        android:layout_height="13dp"
+                        android:contentDescription="Microphone"
+                        android:src="@drawable/ic_mic"
+                        app:tint="@color/muted_blue" />
+
+                    <TextView
+                        android:id="@+id/tvMicBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
+                        android:fontFamily="@font/inter"
+                        android:text="Mic Ready"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Engine Badge -->
+                <LinearLayout
+                    android:id="@+id/badgeEngineStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_pill_neutral"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="5dp">
+
+                    <View
+                        android:id="@+id/dotEngineStatus"
+                        android:layout_width="7dp"
+                        android:layout_height="7dp"
+                        android:background="@drawable/bg_pill_neutral"
+                        android:backgroundTint="@color/success" />
+
+                    <TextView
+                        android:id="@+id/tvEngineBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
+                        android:fontFamily="@font/inter"
+                        android:text="Scam Engine Link"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- Prominent Toggle Protection Button -->
+        <!-- 3. Prominent Toggle Protection Button -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnToggleProtection"
             android:layout_width="match_parent"
-            android:layout_height="68dp"
-            android:text="@string/btn_stop_protection"
-            android:textSize="20sp"
+            android:layout_height="64dp"
+            android:layout_marginBottom="12dp"
+            android:backgroundTint="@color/btn_start"
+            android:fontFamily="@font/inter"
+            android:letterSpacing="0.02"
+            android:text="@string/btn_start_protection"
+            android:textColor="@color/text_white"
+            android:textSize="18sp"
             android:textStyle="bold"
-            app:cornerRadius="16dp"
-            android:backgroundTint="@color/btn_stop"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="12dp" />
+            app:cornerRadius="14dp"
+            app:elevation="0dp" />
 
-        <TextView
-            android:id="@+id/tvSpeakerphoneTip"
+        <!-- 4. Speakerphone Notice Banner -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/speakerphone_tip"
-            android:textSize="14sp"
-            android:textStyle="italic"
-            android:textColor="@color/text_secondary"
-            android:gravity="center"
-            android:layout_marginBottom="20dp" />
+            android:layout_marginBottom="20dp"
+            android:background="@drawable/bg_pill_soft_blue"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp">
 
-        <!-- Urgent Alert Card (Visible when Scam or Threat Detected) -->
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="Info"
+                android:src="@drawable/ic_info"
+                app:tint="@color/primary" />
+
+            <TextView
+                android:id="@+id/tvSpeakerphoneTip"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:fontFamily="@font/inter"
+                android:text="@string/speakerphone_tip"
+                android:textColor="@color/primary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- 5. Urgent Scam & OTP Alert Banner (Initially GONE) -->
         <LinearLayout
             android:id="@+id/cardAlert"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:background="@drawable/bg_status_red"
             android:orientation="vertical"
-            android:background="@drawable/bg_elder_card"
             android:padding="20dp"
-            android:visibility="gone"
-            android:layout_marginBottom="20dp">
+            android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="8dp">
+                android:orientation="horizontal">
 
                 <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:contentDescription="Urgent Scam Alert"
                     android:src="@drawable/ic_warning"
-                    android:contentDescription="Urgent Warning" />
+                    app:tint="@color/high_risk_red" />
 
                 <TextView
                     android:id="@+id/tvAlertTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:text="URGENT FRAUD ALERT"
-                    android:textSize="20sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/status_red_text" />
+                    android:layout_marginStart="10dp"
+                    android:fontFamily="@font/manrope"
+                    android:text="STOP — DO NOT SHARE YOUR OTP"
+                    android:textColor="@color/high_risk_red"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
             <TextView
                 android:id="@+id/tvAlertMessage"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/hang_up_advice"
-                android:textSize="17sp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="16dp"
+                android:fontFamily="@font/inter"
+                android:lineSpacingExtra="3dp"
+                android:text="Never tell anyone your verification code. If someone is pressuring you, stop the conversation and verify their identity independently."
                 android:textColor="@color/text_primary"
-                android:lineSpacingExtra="4dp"
-                android:layout_marginBottom="14dp" />
+                android:textSize="15sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDismissAlert"
                 android:layout_width="match_parent"
-                android:layout_height="54dp"
+                android:layout_height="52dp"
+                android:backgroundTint="@color/high_risk_red"
+                android:fontFamily="@font/inter"
                 android:text="I HUNG UP THE CALL"
+                android:textColor="@color/text_white"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 app:cornerRadius="12dp"
-                android:backgroundTint="@color/status_red_text"
-                android:textColor="#FFFFFF" />
+                app:elevation="0dp" />
         </LinearLayout>
 
-        <!-- Caller Intelligence Card -->
+        <!-- 6. Caller Intelligence & Spoof Defense Card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:layout_marginBottom="16dp"
             android:background="@drawable/bg_elder_card"
-            android:padding="20dp"
-            android:layout_marginBottom="20dp">
+            android:orientation="vertical"
+            android:padding="20dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:fontFamily="@font/manrope"
                 android:text="@string/caller_lookup_title"
-                android:textSize="18sp"
-                android:textStyle="bold"
                 android:textColor="@color/text_primary"
-                android:layout_marginBottom="12dp" />
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="14dp"
+                android:fontFamily="@font/inter"
+                android:text="Verify numbers against telecom numbering and institutional databases."
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
                 app:boxBackgroundMode="outline"
-                app:boxCornerRadiusTopStart="12dp"
-                app:boxCornerRadiusTopEnd="12dp"
+                app:boxCornerRadiusBottomEnd="12dp"
                 app:boxCornerRadiusBottomStart="12dp"
-                app:boxCornerRadiusBottomEnd="12dp">
+                app:boxCornerRadiusTopEnd="12dp"
+                app:boxCornerRadiusTopStart="12dp"
+                app:boxStrokeColor="@color/primary"
+                app:hintTextColor="@color/primary">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etPhoneNumber"
                     android:layout_width="match_parent"
-                    android:layout_height="56dp"
+                    android:layout_height="54dp"
+                    android:fontFamily="@font/inter"
                     android:hint="@string/caller_number_hint"
                     android:inputType="phone"
-                    android:textSize="18sp" />
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCheckCaller"
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
+                android:layout_height="52dp"
+                android:backgroundTint="@color/primary_action"
+                android:fontFamily="@font/inter"
                 android:text="@string/btn_check_caller"
-                android:textSize="17sp"
+                android:textColor="@color/text_white"
+                android:textSize="16sp"
                 android:textStyle="bold"
                 app:cornerRadius="12dp"
-                android:backgroundTint="@color/primary"
-                android:textColor="#FFFFFF" />
+                app:elevation="0dp" />
 
             <!-- Lookup Result Display -->
             <TextView
                 android:id="@+id/tvCallerResult"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="16sp"
-                android:textColor="@color/text_primary"
-                android:visibility="gone"
                 android:layout_marginTop="12dp"
-                android:padding="12dp"
-                android:background="#F1F5F9" />
+                android:background="@drawable/bg_elder_card"
+                android:fontFamily="@font/inter"
+                android:lineSpacingExtra="3dp"
+                android:padding="14dp"
+                android:textColor="@color/text_primary"
+                android:textSize="14.5sp"
+                android:visibility="gone" />
         </LinearLayout>
 
-        <!-- Helpline Fast Action Button -->
+        <!-- 7. Emergency Helpline Button -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnHelpline1930"
             android:layout_width="match_parent"
-            android:layout_height="60dp"
+            android:layout_height="56dp"
+            android:backgroundTint="@color/primary_action"
+            android:fontFamily="@font/inter"
             android:text="@string/btn_helpline"
-            android:textSize="18sp"
+            android:textColor="@color/text_white"
+            android:textSize="16sp"
             android:textStyle="bold"
             app:cornerRadius="14dp"
-            android:backgroundTint="@color/btn_helpline"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="16dp" />
+            app:elevation="0dp"
+            app:icon="@drawable/ic_phone"
+            app:iconGravity="textStart"
+            app:iconPadding="10dp"
+            app:iconTint="@color/text_white" />
 
     </LinearLayout>
 </ScrollView>

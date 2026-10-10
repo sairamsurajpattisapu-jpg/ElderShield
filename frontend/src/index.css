@@ -1,60 +1,115 @@
 :root {
-  --bg-primary: #080c16;
-  --bg-surface: #0f172a;
-  --bg-surface-elevated: #162036;
-  --bg-surface-hover: #1e293b;
-  --border-subtle: #24324d;
-  --border-prominent: #384d75;
-  
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  
-  --accent-cyan: #06b6d4;
-  --accent-teal: #14b8a6;
-  --accent-cyan-glow: rgba(6, 182, 212, 0.15);
-  
-  --risk-low: #10b981;
-  --risk-low-bg: rgba(16, 185, 129, 0.12);
-  --risk-low-border: #059669;
-  
-  --risk-suspicious: #f59e0b;
-  --risk-suspicious-bg: rgba(245, 158, 11, 0.12);
-  --risk-suspicious-border: #d97706;
-  
-  --risk-high: #ef4444;
-  --risk-high-bg: rgba(239, 68, 68, 0.14);
-  --risk-high-border: #dc2626;
-  
-  --risk-uncertain: #94a3b8;
-  --risk-uncertain-bg: rgba(148, 163, 184, 0.12);
-  --risk-uncertain-border: #64748b;
+  /* ==========================================================================
+     ELDERSHIELD DESIGN SYSTEM TOKENS
+     Predominantly White, Minimal & Clinical-Security Identity
+     ========================================================================== */
 
-  --font-base: 16px;
+  /* Backgrounds & Surfaces */
+  --bg-primary: #FFFFFF;        /* Main background: Pure White */
+  --bg-surface: #FFFFFF;        /* Content surfaces: Pure White */
+  --bg-secondary: #F7F8FA;      /* Secondary background */
+  --bg-soft-blue: #EAF1FB;      /* Soft blue accent */
+  --bg-soft-sage: #EAF1FB;      /* Aliased to soft blue for minimal clinical look */
+  --bg-elevated: #FFFFFF;
+
+  /* Brand Palette */
+  --brand-primary: #263B5E;     /* Primary action: Deep Navy */
+  --brand-hover: #1D2D49;       /* Darker Navy on hover */
+  --brand-accent: #EAF1FB;      /* Soft Blue Accent */
+  --brand-muted: #5376A5;       /* Muted Blue */
+  --brand-subtle: #E8EAED;      /* Subtle border */
+  --brand-tint: rgba(38, 59, 94, 0.05);
+
+  /* Typography Colors */
+  --text-primary: #202124;      /* Primary text: Deep Dark Charcoal */
+  --text-secondary: #697386;    /* Secondary text: Readable Slate Gray */
+  --text-muted: #8C96A5;        /* Subtle metadata text */
+  --text-on-brand: #FFFFFF;
+
+  /* Borders & Dividers */
+  --border-subtle: #E8EAED;     /* Standard borders */
+  --border-strong: #D2D6DC;     /* Prominent card borders */
+  --divider-subtle: #F0F1F3;    /* Subtle divider */
+  --border-focus: #263B5E;
+
+  /* Risk & Warning Tokens */
+  --risk-warning: #B7791F;      /* Warning amber */
+  --risk-warning-bg: #FFF5E5;   /* Amber background */
+  --risk-warning-border: #FCE8B2;
+  --warning-amber: #B7791F;
+  --warning-bg: #FFF5E5;
+  --warning-border: #FCE8B2;
+
+  --risk-high: #C43D40;         /* High-risk red */
+  --risk-high-bg: #FCEEEF;      /* High-risk background */
+  --risk-high-border: #F8D7DA;
+  --high-risk-bg: #FCEEEF;
+
+  --risk-safe: #287D68;         /* Restrained safe status accent */
+  --risk-safe-bg: #EAF7F2;      /* Soft green tint (only for safe status badges) */
+  --risk-safe-border: #C6E9DD;
+
+  --risk-neutral: #697386;      /* Insufficient evidence / unverified */
+  --risk-neutral-bg: #F7F8FA;
+  --risk-neutral-border: #E8EAED;
+
+  /* Controls & States */
+  --disabled-text: #A0AEC0;
+  --disabled-bg: #F7F8FA;
+  --disabled-border: #E8EAED;
+
+  /* Typography Fonts */
+  --font-heading: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-base: 15.5px;
+
+  /* Radii & Shadows */
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+  --radius-full: 9999px;
+
+  --shadow-subtle: 0 1px 2px rgba(32, 33, 36, 0.04);
+  --shadow-card: 0 1px 3px rgba(32, 33, 36, 0.04), 0 1px 2px rgba(32, 33, 36, 0.02);
+  --shadow-elevated: 0 4px 12px rgba(32, 33, 36, 0.06);
+  --shadow-modal: 0 16px 40px rgba(32, 33, 36, 0.12);
+
+  /* Layout Spacing */
+  --sidebar-width: 268px;
 }
 
+/* Senior Accessibility Typography Scaling */
 body.font-large {
-  --font-base: 18px;
+  --font-base: 17.5px;
 }
 
 body.font-xlarge {
-  --font-base: 20px;
+  --font-base: 19.5px;
 }
 
+/* High Contrast Mode for Low-Vision Seniors */
 body.high-contrast {
-  --bg-primary: #000000;
-  --bg-surface: #0a0f1d;
-  --bg-surface-elevated: #141c2e;
-  --border-subtle: #475569;
-  --border-prominent: #94a3b8;
-  --text-primary: #ffffff;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
+  --bg-primary: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-secondary: #F0F2F5;
+  --bg-soft-blue: #DCE7F7;
+  --bg-soft-sage: #DCE7F7;
+  --brand-primary: #152238;
+  --brand-hover: #0D1624;
+  --text-primary: #000000;
+  --text-secondary: #2D3748;
+  --text-muted: #4A5568;
+  --border-subtle: #4A5568;
+  --border-strong: #000000;
+  --divider-subtle: #4A5568;
+  --risk-warning: #975A16;
+  --risk-warning-bg: #FEFCBF;
+  --risk-high: #9B2C2C;
+  --risk-high-bg: #FED7D7;
 }
 
+/* Global Reset */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -64,67 +119,234 @@ body.high-contrast {
 html, body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  font-family: var(--font-body);
   font-size: var(--font-base);
-  line-height: 1.5;
+  line-height: 1.55;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
 }
 
-button {
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+button, input, textarea, select {
   font-family: inherit;
   font-size: inherit;
+  color: inherit;
+}
+
+button {
   cursor: pointer;
   touch-action: manipulation;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 
-textarea, input {
-  font-family: inherit;
-  font-size: inherit;
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
 }
 
-/* Mobile responsive optimizations (360px, 390px, 768px) */
-@media (max-width: 640px) {
-  :root {
-    --font-base: 15px;
-  }
-
-  main {
-    padding: 16px 12px !important;
-  }
-
-  header {
-    padding: 12px 14px !important;
-  }
-
-  button {
-    min-height: 40px;
-  }
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
-@media (max-width: 390px) {
-  :root {
-    --font-base: 14.5px;
-  }
+/* Primary Button Styling */
+.btn-primary {
+  background-color: var(--brand-primary);
+  color: var(--text-on-brand);
+  border: 1px solid var(--brand-primary);
+  border-radius: var(--radius-sm);
+  padding: 10px 18px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
 
-  main {
-    padding: 12px 8px !important;
-  }
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--brand-hover);
+  border-color: var(--brand-hover);
+}
+
+.btn-primary:disabled {
+  background-color: var(--disabled-bg);
+  border-color: var(--disabled-border);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+}
+
+/* Secondary Button Styling */
+.btn-secondary {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 18px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-strong);
+}
+
+.btn-secondary:disabled {
+  background-color: var(--disabled-bg);
+  border-color: var(--disabled-border);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+}
+
+/* Card Surface Styling */
+.es-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  box-shadow: var(--shadow-card);
+}
+
+/* Status Badges */
+.badge-safe {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background-color: var(--risk-safe-bg);
+  border: 1px solid var(--risk-safe-border);
+  color: var(--risk-safe);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background-color: var(--risk-warning-bg);
+  border: 1px solid var(--risk-warning-border);
+  color: var(--risk-warning);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background-color: var(--risk-high-bg);
+  border: 1px solid var(--risk-high-border);
+  color: var(--risk-high);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-neutral {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background-color: var(--risk-neutral-bg);
+  border: 1px solid var(--risk-neutral-border);
+  color: var(--risk-neutral);
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 /* Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
   background: var(--bg-primary);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
-  border-radius: 4px;
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-prominent);
+  background: var(--text-muted);
+}
+
+/* Sidebar and Main Layout Structure */
+.app-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-wrapper {
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: margin-left 0.2s ease;
+}
+
+/* Responsive Overrides */
+@media (max-width: 900px) {
+  :root {
+    --sidebar-width: 0px;
+  }
+
+  .main-wrapper {
+    margin-left: 0 !important;
+  }
+
+  .mobile-hamburger-btn {
+    display: inline-flex !important;
+  }
+
+  .mobile-close-btn {
+    display: inline-flex !important;
+  }
+
+  aside.es-sidebar {
+    width: 280px !important;
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+
+  aside.es-sidebar.mobile-open {
+    transform: translateX(0) !important;
+    box-shadow: var(--shadow-modal) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --font-base: 15px;
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
